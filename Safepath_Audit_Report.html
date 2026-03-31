@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Safepath Audit Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --text: #1f2937;
+      --muted: #4b5563;
+      --border: #d1d5db;
+      --soft: #f3f4f6;
+      --accent: #1d4ed8;
+      --danger: #b91c1c;
+      --warn: #92400e;
+      --good: #166534;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      line-height: 1.5;
+      background: white;
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 48px 72px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.2;
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      font-size: 34px;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 24px;
+      margin-top: 36px;
+      padding-top: 10px;
+      border-top: 2px solid var(--soft);
+    }
+
+    h3 {
+      font-size: 18px;
+      margin-top: 24px;
+    }
+
+    p, li {
+      font-size: 14px;
+      margin: 0 0 10px;
+    }
+
+    ul, ol {
+      margin: 10px 0 16px 22px;
+      padding: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 22px;
+      font-size: 13px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--soft);
+      font-weight: 700;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      background: #f8fafc;
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    pre {
+      margin: 12px 0 18px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fafafa;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .lede {
+      color: var(--muted);
+      font-size: 15px;
+      margin-bottom: 18px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 24px 0 28px;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: white;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .status {
+      font-weight: 700;
+    }
+
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+
+    .toc ol {
+      columns: 2;
+      column-gap: 36px;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    @media print {
+      .page {
+        max-width: none;
+        padding: 24px 26px 36px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Safepath Audit Report</h1>
+    <p class="lede">
+      Evidence-based audit of the current project state for <code>File-organizerv2</code>, covering runtime behavior,
+      architecture, setup, testing, product maturity, and planned-vs-implemented gaps.
+    </p>
+    <p class="small">Project audited: <code>File-organizerv2</code> | Product name in code/config: <code>Safepath</code></p>
+
+    <div class="meta">
+      <div class="card">
+        <h3>Current Status</h3>
+        <p><span class="status warn">Advanced internal alpha</span></p>
+        <p>Core file-organizing workflow is substantively implemented, but onboarding, docs, CI, and frontend modularity are immature.</p>
+      </div>
+      <div class="card">
+        <h3>Bottom Line</h3>
+        <p><span class="status good">Real product core</span></p>
+        <p>The Rust engine is meaningfully complete for scan, analysis, plan, execute, undo, and learner flows.</p>
+      </div>
+    </div>
+
+    <div class="toc">
+      <h2>Table of Contents</h2>
+      <ol>
+        <li>Executive summary</li>
+        <li>Current project status</li>
+        <li>Main strengths</li>
+        <li>Main risks</li>
+        <li>Overall implementation maturity</li>
+        <li>Project map</li>
+        <li>Architecture and system audit</li>
+        <li>Installation and test setup guide</li>
+        <li>Usage and operations guide</li>
+        <li>Feature and section review</li>
+        <li>Original plan vs current implementation</li>
+        <li>Product quality assessment</li>
+        <li>Recommendations and next steps</li>
+      </ol>
+    </div>
+
+    <h2>Executive Summary</h2>
+    <p>
+      <code>Safepath</code> is a single local-first desktop app implemented under <code>File-organizerv2</code>. In practice it is a
+      <code>Tauri 2 + React/Vite + Rust + SQLite</code> application, not a client/server system. The real runtime path is:
+      <code>React UI -&gt; Tauri IPC -&gt; Rust commands -&gt; safepath-core / safepath-store -&gt; SQLite + filesystem</code>.
+    </p>
+    <p>
+      The core workflow is materially implemented: source/destination selection, readiness probing, scan job creation,
+      manifest paging, cheap and expensive duplicate analysis, protection detection and overrides, preset-driven planning,
+      duplicate review, execution, history, undo, and learner suggestions with draft preset generation.
+    </p>
+    <p>
+      The weak side of the project is not the engine. It is documentation, onboarding, frontend maintainability, test breadth,
+      roadmap traceability, and product polish.
+    </p>
+
+    <h2>Current Project Status</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Area</th>
+          <th>Observed status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Frontend lint</td>
+          <td><span class="good">Passes</span> via <code>npm run lint</code></td>
+        </tr>
+        <tr>
+          <td>Frontend build</td>
+          <td><span class="good">Passes</span> via <code>npm run build</code></td>
+        </tr>
+        <tr>
+          <td>Rust tests</td>
+          <td><span class="good">Passes</span> via <code>CARGO_HOME="$PWD/.cargo-home" cargo test --workspace --offline</code></td>
+        </tr>
+        <tr>
+          <td>Frontend tests</td>
+          <td><span class="danger">Missing</span>; no <code>test</code> script in <code>package.json</code></td>
+        </tr>
+        <tr>
+          <td>CI</td>
+          <td><span class="danger">Missing</span>; no first-party workflow config found</td>
+        </tr>
+        <tr>
+          <td>Docs</td>
+          <td><span class="danger">Weak</span>; root <code>README.md</code> is still the stock Vite template</td>
+        </tr>
+        <tr>
+          <td>Environment config</td>
+          <td><span class="warn">Minimal</span>; no first-party <code>.env</code>, <code>.env.example</code>, <code>.nvmrc</code>, or <code>rust-toolchain.toml</code></td>
+        </tr>
+        <tr>
+          <td>Version-control traceability</td>
+          <td><span class="danger">Unavailable</span>; no project <code>.git</code> metadata in this checkout</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Main Strengths</h2>
+    <ul>
+      <li>Rust domain logic is cleanly split into scanning, analysis, planning, execution, history, learner, rules, templates, and presets.</li>
+      <li>Persistence model is explicit and fairly complete, with SQLite tables for jobs, manifest, plans, sessions, action records, presets, and learner observations.</li>
+      <li>Execution is safety-oriented: preflight checks, cross-volume safe copy-then-remove, holding areas for duplicate cleanup, and undo support.</li>
+      <li>Rust unit test coverage is strong relative to project size.</li>
+      <li>Tauri DTO surface is typed end-to-end through <code>src/types/app.ts</code> and <code>crates/safepath-core/src/types.rs</code>.</li>
+    </ul>
+
+    <h2>Main Risks</h2>
+    <ul>
+      <li><code>src/App.tsx</code> is a large monolith that owns nearly all frontend state, effects, polling, and workflow logic.</li>
+      <li>Docs are far behind the actual system; new contributors cannot learn the product from the repository alone.</li>
+      <li>No frontend or end-to-end automation means regressions in UI behavior and Tauri event wiring are easy to miss.</li>
+      <li>No CI means current healthy state is not protected.</li>
+      <li>Roadmap and original intent must be inferred from code and UI copy because formal planning artifacts are missing.</li>
+    </ul>
+
+    <h2>Overall Implementation Maturity</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th>Maturity</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Core engine</td>
+          <td>Medium-high</td>
+          <td>Planning, execution, undo, and learner logic are materially implemented.</td>
+        </tr>
+        <tr>
+          <td>Desktop integration</td>
+          <td>Medium</td>
+          <td>Tauri shell and command surface are in place and functioning.</td>
+        </tr>
+        <tr>
+          <td>Persistence</td>
+          <td>Medium</td>
+          <td>SQLite schema is comprehensive, but some state is in-memory only.</td>
+        </tr>
+        <tr>
+          <td>Frontend architecture</td>
+          <td>Low-medium</td>
+          <td>Usable but concentrated in one file.</td>
+        </tr>
+        <tr>
+          <td>Developer experience</td>
+          <td>Low-medium</td>
+          <td>Build/test commands exist, but onboarding and CI do not.</td>
+        </tr>
+        <tr>
+          <td>Product readiness</td>
+          <td>Low-medium</td>
+          <td>Strong core, weak polish, sparse docs, narrow feature set.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Project Map</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Path</th>
+          <th>Responsibility</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>package.json</code>, <code>vite.config.ts</code>, <code>tsconfig*.json</code>, <code>eslint.config.js</code></td>
+          <td>Frontend scripts, Vite dev/build behavior, TypeScript project refs, linting.</td>
+        </tr>
+        <tr>
+          <td><code>src/main.tsx</code></td>
+          <td>React entry point.</td>
+        </tr>
+        <tr>
+          <td><code>src/App.tsx</code></td>
+          <td>Main UI state machine for workflow, history, and settings.</td>
+        </tr>
+        <tr>
+          <td><code>src/lib/tauri.ts</code></td>
+          <td>Typed IPC wrappers and event subscriptions; browser fallback.</td>
+        </tr>
+        <tr>
+          <td><code>src/types/app.ts</code></td>
+          <td>Frontend DTO mirror of Rust types.</td>
+        </tr>
+        <tr>
+          <td><code>src/components/layout/*</code>, <code>src/components/permissions/*</code></td>
+          <td>Small presentational wrappers.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/main.rs</code></td>
+          <td>Tauri app setup, app DB path, command registration, in-memory app state.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/commands/*.rs</code></td>
+          <td>Command adapters for app status, scan, planning, review, execution, learner.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/permissions.rs</code></td>
+          <td>Filesystem access probes and macOS privacy hints.</td>
+        </tr>
+        <tr>
+          <td><code>crates/safepath-core/src/*.rs</code></td>
+          <td>Core domain logic.</td>
+        </tr>
+        <tr>
+          <td><code>crates/safepath-store/src/*.rs</code></td>
+          <td>SQLite schema and persistence.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Architecture and System Audit</h2>
+    <h3>System model</h3>
+    <p>
+      The project is a single desktop application. No HTTP server, external API, queue service, cloud backend, or auth provider
+      was found in first-party code. Storage is local SQLite plus direct filesystem operations.
+    </p>
+    <pre>React UI (src/App.tsx)
+  - invoke() and listen() through src/lib/tauri.ts
+Tauri command layer (src-tauri/src/commands/*.rs)
+  - delegates to safepath-core and safepath-store
+Rust core logic (crates/safepath-core)
+  - scan, analyze, plan, execute, undo, learner
+SQLite store (crates/safepath-store)
+  - jobs, manifest, analysis, plans, sessions, records, presets, learner observations
+Local filesystem
+  - source scanning, destination writes, duplicate holding, undo operations</pre>
+
+    <h3>Frontend</h3>
+    <p>
+      <code>src/App.tsx</code> controls almost everything: local inputs, selection sync, status hydration, scan polling, event listeners,
+      manifest paging, plan review buckets, execution session refresh, history drill-down, undo flows, and learner interactions.
+    </p>
+    <p>
+      The three views are <code>workflow</code>, <code>history</code>, and <code>settings</code>. There is no router. Navigation is internal UI state.
+    </p>
+    <p>
+      Presentational components are small and focused:
+    </p>
+    <ul>
+      <li><code>src/components/layout/WorkflowShell.tsx</code>: three-column layout</li>
+      <li><code>src/components/layout/AppStatusSummary.tsx</code>: shell/platform/version/selection summary</li>
+      <li><code>src/components/permissions/PermissionReadinessCard.tsx</code>: readiness state card</li>
+    </ul>
+
+    <h3>Tauri bridge</h3>
+    <p>
+      <code>src/lib/tauri.ts</code> defines all desktop commands and event listeners. The UI does not directly call Rust or filesystem APIs.
+      If Tauri is unavailable, <code>getAppStatus()</code> returns a browser fallback DTO so the shell can render without crashing.
+    </p>
+    <p>
+      Implemented command surface includes status, path selection, presets, plan build/review, scan lifecycle, execution, undo,
+      history, analysis, protection overrides, and learner endpoints.
+    </p>
+
+    <h3>Tauri shell and runtime state</h3>
+    <p>
+      <code>src-tauri/src/main.rs</code> creates an in-memory <code>AppState</code> that holds:
+    </p>
+    <ul>
+      <li><code>store: Store</code> for SQLite persistence</li>
+      <li>scan cancellation tokens</li>
+      <li>selected source paths</li>
+      <li>selected destination paths</li>
+      <li>workflow phase</li>
+    </ul>
+    <p>
+      Important nuance: selected sources/destinations and workflow phase are not persisted to SQLite. They live only in app memory.
+    </p>
+
+    <h3>Filesystem permissions and readiness</h3>
+    <p>
+      <code>src-tauri/src/permissions.rs</code> does practical filesystem probing, not account-based permissioning:
+    </p>
+    <ul>
+      <li>sources are checked by metadata lookup and directory listing or file open</li>
+      <li>destinations are checked by creating and removing a temporary probe file</li>
+      <li>macOS-specific hints are returned for <code>/Users/.../Library</code>, <code>/Volumes</code>, and <code>/Library</code></li>
+    </ul>
+    <p>
+      No authentication, roles, or admin permission system exists.
+    </p>
+
+    <h3>Core domain engine</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>scanner.rs</code></td>
+          <td>Walks source roots with <code>walkdir</code>, emits manifest-like records and progress.</td>
+        </tr>
+        <tr>
+          <td><code>analyzer.rs</code></td>
+          <td>Computes category counts, structure signals, likely duplicates, definite duplicates, and protection detections.</td>
+        </tr>
+        <tr>
+          <td><code>rules.rs</code></td>
+          <td>Evaluates planner rule conditions.</td>
+        </tr>
+        <tr>
+          <td><code>templates.rs</code></td>
+          <td>Safely renders relative destination templates such as <code>Images/{file_year}/{file_month}</code>.</td>
+        </tr>
+        <tr>
+          <td><code>presets.rs</code></td>
+          <td>Defines built-in presets: <code>general_organize</code>, <code>project_safe</code>, <code>duplicate_review</code>.</td>
+        </tr>
+        <tr>
+          <td><code>planner.rs</code></td>
+          <td>Builds actionable plans from manifest + analysis + preset + destination root.</td>
+        </tr>
+        <tr>
+          <td><code>executor.rs</code></td>
+          <td>Preflights plans, chooses execution strategy, performs file operations, records outcomes.</td>
+        </tr>
+        <tr>
+          <td><code>history.rs</code></td>
+          <td>Builds history summaries and applies undo behavior.</td>
+        </tr>
+        <tr>
+          <td><code>learner.rs</code></td>
+          <td>Turns user observations into learner suggestions and draft presets.</td>
+        </tr>
+        <tr>
+          <td><code>types.rs</code></td>
+          <td>Shared DTO layer for frontend/backend serialization.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Persistence and schema</h3>
+    <p>
+      <code>crates/safepath-store/src/migrations.rs</code> defines schema version <code>2</code> and enables SQLite WAL mode.
+      The database persists scan jobs, sources, manifest rows, analysis payloads, duplicate groups, protection overrides,
+      presets, plans, execution sessions, action records, and learner observations.
+    </p>
+    <p>
+      Persistence is a hybrid JSON-plus-indexed-columns model. Most rich domain objects are serialized as JSON; some columns are
+      broken out for indexing or migration support.
+    </p>
+
+    <h3>Data flow</h3>
+    <ol>
+      <li>User enters source and destination paths in <code>src/App.tsx</code>.</li>
+      <li><code>select_sources</code> and <code>select_destinations</code> update in-memory selection state.</li>
+      <li><code>start_scan</code> creates a scan job and spawns a scan worker.</li>
+      <li><code>record_manifest_entry</code> persists each discovered entry and increments scan counters.</li>
+      <li><code>analyze_manifest</code> computes category counts, structure warnings, duplicates, and protection signals.</li>
+      <li><code>build_plan</code> loads manifest + analysis + preset and creates a <code>PlanDto</code>.</li>
+      <li>Review actions and duplicate keeper choices mutate the plan and produce learner observations.</li>
+      <li><code>execute_plan</code> creates an execution session and appends action records as work progresses.</li>
+      <li><code>get_history_page</code> projects records into history entries with undo eligibility.</li>
+      <li>Learner observations are aggregated into suggestions and draft preset previews.</li>
+    </ol>
+
+    <h3>Control flow</h3>
+    <p>
+      The practical control path is: <code>readiness -&gt; scan -&gt; analysis -&gt; plan -&gt; review -&gt; execute -&gt; history/undo</code>.
+      Scan and execution use background worker threads; the frontend uses a mix of event listeners and polling to keep state updated.
+    </p>
+
+    <h3>User flow</h3>
+    <ul>
+      <li><strong>Workflow:</strong> path setup, readiness, scan, analysis, planning, review, execute</li>
+      <li><strong>History:</strong> record inspection, session inspection, best-effort undo</li>
+      <li><strong>Settings:</strong> learner suggestions, draft previews, learner observations, suggestion feedback</li>
+    </ul>
+
+    <h3>External integrations, APIs, storage, jobs, auth, config</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Concern</th>
+          <th>Observed reality</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>External APIs</td>
+          <td>None found in first-party code</td>
+        </tr>
+        <tr>
+          <td>Storage</td>
+          <td>SQLite and local filesystem</td>
+        </tr>
+        <tr>
+          <td>Background jobs</td>
+          <td>Scan worker and execution worker threads</td>
+        </tr>
+        <tr>
+          <td>Auth</td>
+          <td>None</td>
+        </tr>
+        <tr>
+          <td>Environment variables</td>
+          <td>No first-party env-based app config detected</td>
+        </tr>
+        <tr>
+          <td>Secrets</td>
+          <td>None detected</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Installation and Test Setup Guide</h2>
+    <h3>Required dependencies</h3>
+    <ul>
+      <li>Node.js and npm</li>
+      <li>Rust/Cargo</li>
+      <li>macOS desktop build prerequisites for Tauri builds</li>
+    </ul>
+    <p class="muted">
+      Exact Node and Rust versions are not pinned in-repo. This is a documentation and reproducibility gap, not a hidden requirement found in source.
+    </p>
+
+    <h3>Exact local setup steps</h3>
+    <ol>
+      <li>Open the project root: <code>File-organizerv2</code></li>
+      <li>Install JS dependencies: <code>npm install</code></li>
+      <li>Run browser-only shell: <code>npm run dev</code></li>
+      <li>Run desktop dev app: <code>npm run tauri:dev</code></li>
+      <li>Run lint: <code>npm run lint</code></li>
+      <li>Run production build: <code>npm run build</code></li>
+      <li>Run Rust tests from this checkout: <code>CARGO_HOME="$PWD/.cargo-home" cargo test --workspace --offline</code></li>
+      <li>Run production-like desktop packaging: <code>npm run tauri:build</code></li>
+    </ol>
+
+    <h3>How to run dev, test, build, and production-like modes</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Command</th>
+          <th>What it does</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Frontend dev shell</td>
+          <td><code>npm run dev</code></td>
+          <td>Runs Vite on <code>127.0.0.1:1420</code>. Desktop-only commands remain unavailable.</td>
+        </tr>
+        <tr>
+          <td>Desktop dev</td>
+          <td><code>npm run tauri:dev</code></td>
+          <td>Launches the full Tauri app using the Vite dev server.</td>
+        </tr>
+        <tr>
+          <td>Frontend lint</td>
+          <td><code>npm run lint</code></td>
+          <td>Runs ESLint over TS/TSX source.</td>
+        </tr>
+        <tr>
+          <td>Frontend build</td>
+          <td><code>npm run build</code></td>
+          <td>Type-checks via <code>tsc -b</code> then builds Vite assets into <code>dist</code>.</td>
+        </tr>
+        <tr>
+          <td>Rust tests</td>
+          <td><code>CARGO_HOME="$PWD/.cargo-home" cargo test --workspace --offline</code></td>
+          <td>Runs Rust unit tests using the bundled Cargo home in this checkout.</td>
+        </tr>
+        <tr>
+          <td>Package app</td>
+          <td><code>npm run tauri:build</code></td>
+          <td>Builds frontend and creates Tauri bundle artifacts.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Env vars, secrets, services, and sample data</h3>
+    <ul>
+      <li>Env vars: none required by first-party code</li>
+      <li>Secrets: none detected</li>
+      <li>External services: none required</li>
+      <li>Sample data: none included; manual testing needs real local directories and files</li>
+    </ul>
+
+    <h3>Common setup issues and fixes</h3>
+    <ul>
+      <li><strong>Port 1420 in use:</strong> Vite uses <code>strictPort: true</code> in <code>vite.config.ts</code>. Free the port or change config.</li>
+      <li><strong>macOS privacy blocks path access:</strong> avoid protected folders or grant the needed OS-level permissions.</li>
+      <li><strong>Rust tests fail when Cargo writes to default home:</strong> use the repo-local <code>.cargo-home</code> command shown above.</li>
+      <li><strong>Misleading docs:</strong> do not rely on the current <code>README.md</code>; it is still a generic Vite template.</li>
+    </ul>
+
+    <h3>Missing items that prevent reliable local testing</h3>
+    <ul>
+      <li>No real setup guide</li>
+      <li>No version pinning</li>
+      <li>No fixture corpus</li>
+      <li>No frontend tests</li>
+      <li>No E2E tests</li>
+      <li>No CI</li>
+      <li>No single verification script that runs all important checks</li>
+    </ul>
+
+    <h2>Full Usage and Operations Guide</h2>
+    <h3>User-facing features</h3>
+    <ol>
+      <li>Enter one absolute source path per line in the workflow left panel.</li>
+      <li>Enter the primary destination folder in the right panel.</li>
+      <li>Click <code>Check readiness</code> to verify source readability and destination writability.</li>
+      <li>Click <code>Start scan</code> to create a scan job and traverse the selected source trees.</li>
+      <li>Review manifest pages and analysis summary.</li>
+      <li>Optionally click <code>Run expensive analysis</code> to hash files and improve duplicate detection certainty.</li>
+      <li>Select a preset and click <code>Build plan</code>.</li>
+      <li>Approve, reject, or reset planned actions. For duplicate groups, choose a keeper first.</li>
+      <li>Optionally mark detected paths as protected.</li>
+      <li>Click <code>Execute approved</code>.</li>
+      <li>Use the <code>History</code> tab to inspect records and run record-level or session-level undo.</li>
+      <li>Use the <code>Settings</code> tab to inspect learner suggestions and save draft presets.</li>
+    </ol>
+
+    <h3>Developer/operator workflows</h3>
+    <ul>
+      <li>Review built-in presets in <code>crates/safepath-core/src/presets.rs</code>.</li>
+      <li>Inspect runtime schema in <code>crates/safepath-store/src/migrations.rs</code>.</li>
+      <li>Use Rust tests as the main automated safety net today.</li>
+      <li>Inspect the runtime DB at the Tauri app data location if debugging persisted state.</li>
+      <li>Use history/undo as the only built-in operational recovery mechanism.</li>
+    </ul>
+
+    <h3>Admin/maintenance tasks</h3>
+    <p>
+      There is no real admin console. Maintenance today is mostly:
+    </p>
+    <ul>
+      <li>running lint/build/tests</li>
+      <li>inspecting the SQLite database</li>
+      <li>reviewing history and undoing records/sessions</li>
+      <li>adjusting presets through code or learner-generated draft presets</li>
+    </ul>
+
+    <h3>Troubleshooting guide</h3>
+    <ul>
+      <li><strong>Scan will not start:</strong> inspect readiness summary and verify destination exists.</li>
+      <li><strong>Duplicate group approval fails:</strong> pick a keeper first.</li>
+      <li><strong>Execution shows preflight issues:</strong> inspect missing source, destination collision, or missing keeper constraints.</li>
+      <li><strong>Unexpected protected path behavior:</strong> inspect analysis protections and user overrides.</li>
+      <li><strong>Undo unavailable:</strong> check whether the action was completed, rollback-safe, and not already undone.</li>
+    </ul>
+
+    <h2>Feature and Section Review</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Section</th>
+          <th>Purpose</th>
+          <th>Status</th>
+          <th>How it works</th>
+          <th>Dependencies</th>
+          <th>Gaps / technical debt</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Path selection and readiness</td>
+          <td>Choose sources/destination and validate access</td>
+          <td>Implemented</td>
+          <td><code>select_sources</code>, <code>select_destinations</code>, and <code>permissions_readiness()</code> update in-memory state and probe filesystem access</td>
+          <td><code>src/App.tsx</code>, <code>src-tauri/src/permissions.rs</code></td>
+          <td>Selections are not persisted across app restarts</td>
+        </tr>
+        <tr>
+          <td>Scanning and manifest</td>
+          <td>Discover source content and persist an inventory</td>
+          <td>Implemented</td>
+          <td>Background worker traverses with <code>WalkDir</code>, writes manifest rows, emits progress</td>
+          <td><code>scanner.rs</code>, <code>scan.rs</code>, <code>manifest.rs</code>, <code>scan_jobs.rs</code></td>
+          <td>UI does not consume every emitted scan event</td>
+        </tr>
+        <tr>
+          <td>Cheap analysis</td>
+          <td>Produce initial review signals</td>
+          <td>Implemented</td>
+          <td>Counts categories, structure issues, likely duplicates, project/protection markers</td>
+          <td><code>analyzer.rs</code>, <code>analysis.rs</code></td>
+          <td>No profiling evidence for large source trees</td>
+        </tr>
+        <tr>
+          <td>Expensive analysis</td>
+          <td>Hash files to confirm definite duplicates</td>
+          <td>Implemented</td>
+          <td><code>run_expensive_analysis()</code> hashes files and merges definite groups into summary</td>
+          <td><code>analyzer.rs</code>, <code>scan.rs</code></td>
+          <td>Runs synchronously on the command thread</td>
+        </tr>
+        <tr>
+          <td>Protection detection and overrides</td>
+          <td>Avoid reorganizing likely project/system roots</td>
+          <td>Implemented</td>
+          <td>Analyzer detects markers like <code>.git</code>, <code>Cargo.toml</code>, <code>package.json</code>; user overrides are stored separately</td>
+          <td><code>analyzer.rs</code>, <code>protection.rs</code>, <code>App.tsx</code></td>
+          <td>Override UX is basic</td>
+        </tr>
+        <tr>
+          <td>Presets, rules, templates</td>
+          <td>Turn analysis into planned actions</td>
+          <td>Implemented</td>
+          <td>Built-in presets seed the store; planner evaluates rules and renders destination templates safely</td>
+          <td><code>presets.rs</code>, <code>rules.rs</code>, <code>templates.rs</code>, <code>planner.rs</code></td>
+          <td>No full preset editor UI</td>
+        </tr>
+        <tr>
+          <td>Duplicate review</td>
+          <td>Force explicit keeper choice before duplicate cleanup</td>
+          <td>Implemented</td>
+          <td>Planner creates duplicate review groups and recommends newest file as default keeper</td>
+          <td><code>planner.rs</code>, <code>review.rs</code>, <code>plans.rs</code></td>
+          <td>Recommendation policy is simplistic</td>
+        </tr>
+        <tr>
+          <td>Execution</td>
+          <td>Apply approved actions safely</td>
+          <td>Implemented</td>
+          <td>Preflight checks, strategy selection, file operations, action records, session progress</td>
+          <td><code>executor.rs</code>, <code>execution.rs</code></td>
+          <td>No pause/resume; no OS Trash integration</td>
+        </tr>
+        <tr>
+          <td>History and undo</td>
+          <td>Audit and recover file operations</td>
+          <td>Implemented</td>
+          <td>Append-only action records are summarized into history entries and can be undone best-effort</td>
+          <td><code>history.rs</code>, <code>store/history.rs</code>, <code>commands/execution.rs</code></td>
+          <td>Undo is not transactional and is only as safe as recorded state</td>
+        </tr>
+        <tr>
+          <td>Learner suggestions and drafts</td>
+          <td>Learn from user corrections and propose preset changes</td>
+          <td>Implemented, early product stage</td>
+          <td>Duplicate keeper selections, review decisions, and feedback become learner observations, suggestions, and draft presets</td>
+          <td><code>learner.rs</code>, <code>store/learner.rs</code>, settings UI</td>
+          <td>Copy implies less capability than the code actually has</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Original Plan vs Current Implementation</h2>
+    <p>
+      Formal planning artifacts are largely absent. There is no meaningful product README, no roadmap, no ADRs, and no project
+      Git history in this checkout. As a result, original intent must be reconstructed from product copy and code-level signals.
+    </p>
+
+    <h3>Best evidence for intended direction</h3>
+    <ul>
+      <li><strong>Rename in progress:</strong> product is <code>Safepath</code> in config and UI, but legacy <code>file-organizerv2</code> still appears in HTML and lockfile metadata.</li>
+      <li><strong>Sprint 1 single-destination:</strong> UI explicitly says only one destination root is used today, while backend still stores a list.</li>
+      <li><strong>Phase 6 undo:</strong> undo-safe strategy language suggests milestone naming that outlived the implementation.</li>
+      <li><strong>Phase 7 learner:</strong> settings copy frames the learner as a later milestone.</li>
+      <li><strong>Future preset-level duplicate keeper policy:</strong> learner suggestion text explicitly points to future policy work.</li>
+    </ul>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Planned / implied</th>
+          <th>Implemented reality</th>
+          <th>Assessment</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Desktop organizer product</td>
+          <td>Implemented and working</td>
+          <td>Core intent achieved</td>
+        </tr>
+        <tr>
+          <td>Single destination first, multi-destination later</td>
+          <td>Single destination only; list stored for future use</td>
+          <td>Partial / deferred</td>
+        </tr>
+        <tr>
+          <td>Undo as a milestone feature</td>
+          <td>Undo implemented across current execution strategies</td>
+          <td>Complete, but milestone wording remains</td>
+        </tr>
+        <tr>
+          <td>Learner review signals and draft changes</td>
+          <td>Implemented</td>
+          <td>More complete than docs imply</td>
+        </tr>
+        <tr>
+          <td>Automatic preset writing from learner</td>
+          <td>Not automatic, but manual draft-to-preset save exists</td>
+          <td>Partial / nuanced</td>
+        </tr>
+        <tr>
+          <td>Formal product plan and docs</td>
+          <td>Missing</td>
+          <td>Major gap</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Complete / partial / missing / unclear</h3>
+    <p><strong>Complete:</strong> scan, cheap analysis, expensive duplicate hashing, planning, review, execution, history, undo, learner observations, learner suggestions, learner draft preset generation.</p>
+    <p><strong>Partial:</strong> settings as a general settings subsystem, multi-destination behavior, roadmap/documentation alignment, event-driven UI completeness.</p>
+    <p><strong>Missing:</strong> formal docs/specs, frontend tests, CI, search, tagging, sync, backup/snapshots, notifications, analytics, import/export, accessibility work, admin tooling.</p>
+    <p><strong>Unclear:</strong> long-term product scope and whether this checkout is the canonical repository.</p>
+
+    <h2>Organizer / Product Quality Assessment</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th>Assessment</th>
+          <th>What is missing or weak</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>UX</td>
+          <td>Functional but dense</td>
+          <td>Large one-screen orchestration, limited discoverability</td>
+        </tr>
+        <tr>
+          <td>Structure</td>
+          <td>Strong backend, weak frontend</td>
+          <td><code>src/App.tsx</code> centralization</td>
+        </tr>
+        <tr>
+          <td>Reliability</td>
+          <td>Good safety posture in file ops</td>
+          <td>No backup/snapshot system, no CI</td>
+        </tr>
+        <tr>
+          <td>Performance</td>
+          <td>Likely acceptable for current scale</td>
+          <td>No profiling evidence; expensive analysis blocks command thread</td>
+        </tr>
+        <tr>
+          <td>Maintainability</td>
+          <td>Mixed</td>
+          <td>Great Rust split, poor frontend modularity</td>
+        </tr>
+        <tr>
+          <td>Scalability</td>
+          <td>Adequate for local single-user app</td>
+          <td>No queue management, no multi-destination strategy, no sync model</td>
+        </tr>
+        <tr>
+          <td>Onboarding</td>
+          <td>Weak</td>
+          <td>Misleading README, no version pins, no setup guide</td>
+        </tr>
+        <tr>
+          <td>Documentation</td>
+          <td>Weak</td>
+          <td>Little first-party product documentation</td>
+        </tr>
+        <tr>
+          <td>Testing</td>
+          <td>Mixed</td>
+          <td>Rust unit tests good; frontend and E2E absent</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Important missing systems</h3>
+    <ul>
+      <li>Search</li>
+      <li>Tagging / labels</li>
+      <li>Saved filters / smart views</li>
+      <li>Reminders or scheduled jobs</li>
+      <li>Sync across devices</li>
+      <li>Backups / snapshots</li>
+      <li>Notifications</li>
+      <li>Analytics / telemetry</li>
+      <li>Import / export</li>
+      <li>Accessibility work</li>
+      <li>Observability and diagnostics</li>
+      <li>Admin tooling</li>
+      <li>Authentication / roles / permission model beyond OS filesystem access</li>
+    </ul>
+    <p class="muted">
+      Some of these may be intentionally out of scope for a strictly local single-user organizer. The repo does not currently document that scope clearly.
+    </p>
+
+    <h2>Recommendations and Next Steps</h2>
+    <h3>Must-fix items</h3>
+    <ul>
+      <li>Replace the stock <code>README.md</code> with real product documentation for Safepath.</li>
+      <li>Clean up naming drift across <code>README.md</code>, <code>index.html</code>, and <code>package-lock.json</code>.</li>
+      <li>Add CI for <code>npm run lint</code>, <code>npm run build</code>, and <code>cargo test --workspace</code>.</li>
+      <li>Modularize <code>src/App.tsx</code> into feature-level components/hooks.</li>
+      <li>Decide whether repo-local <code>.cargo-home</code> is intentional and document or ignore it accordingly.</li>
+    </ul>
+
+    <h3>Quick wins</h3>
+    <ul>
+      <li>Add <code>.nvmrc</code> and <code>rust-toolchain.toml</code>.</li>
+      <li>Add a single verification command or script that runs lint, build, and Rust tests.</li>
+      <li>Wire <code>job_failed</code> and <code>analysis_progress</code> into the UI.</li>
+      <li>Update settings copy so it matches current learner draft-save behavior.</li>
+      <li>Document that only the first destination root is used today.</li>
+    </ul>
+
+    <h3>Critical blockers</h3>
+    <ul>
+      <li>No real onboarding docs</li>
+      <li>No CI</li>
+      <li>No frontend or integration test coverage</li>
+      <li>No backup/snapshot safety net beyond best-effort undo</li>
+      <li>No formal planning/spec trail</li>
+    </ul>
+
+    <h3>Medium-term improvements</h3>
+    <ul>
+      <li>Add frontend smoke tests and one desktop end-to-end happy-path test.</li>
+      <li>Persist path selections across app restarts if that matches intended UX.</li>
+      <li>Move expensive analysis into a background worker with progress events.</li>
+      <li>Add richer filtering and search across manifest, plan, and history.</li>
+      <li>Build a real preset management UI.</li>
+      <li>Improve structured logging and error visibility.</li>
+    </ul>
+
+    <h3>Long-term architecture / product recommendations</h3>
+    <ul>
+      <li>Decide whether Safepath remains a narrow local organizer or grows into a broader organization platform.</li>
+      <li>If it stays local-first, prioritize snapshots/backups and stronger undo semantics before expanding breadth.</li>
+      <li>If product scope expands, prioritize search, import/export, tagging, and accessibility before telemetry or notifications.</li>
+      <li>If multi-device use is ever intended, sync and conflict resolution will require a substantial architectural step beyond the current local-only design.</li>
+    </ul>
+
+    <h3>Optional enhancements</h3>
+    <ul>
+      <li>Search across manifest, history, actions, and presets</li>
+      <li>Preset import/export</li>
+      <li>Better duplicate review UX with metadata previews instead of entry IDs</li>
+      <li>Notifications for long-running scans and execution sessions</li>
+      <li>Analytics only if accompanied by an explicit privacy and product strategy</li>
+    </ul>
+
+    <h2>Closing Assessment</h2>
+    <p>
+      Safepath is not just a scaffold anymore. The engine and persistence layers are real, the end-to-end workflow is implemented,
+      and the system can be exercised locally today. The main gap is that the surrounding product layer has not caught up with the code.
+      A focused iteration on docs, CI, frontend modularity, and small UX/runtime cleanup would materially improve confidence and maintainability.
+    </p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+[package]
+name = "safepath-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+uuid.workspace = true
+serde_json.workspace = true
+safepath-core = { path = "../safepath-core" }
