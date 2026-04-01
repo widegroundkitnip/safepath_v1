@@ -20,41 +20,26 @@ use commands::scan::{
     run_expensive_analysis, set_protection_override, start_scan,
 };
 use commands::test_data::generate_synthetic_dataset;
-use safepath_core::WorkflowPhase;
+use safepath_core::pathing::{normalize_selection_path, selection_path_key};
+use safepath_core::{PersistedSelectionStateDto, WorkflowPhase};
 use safepath_store::Store;
 use tauri::Manager;
-
-#[derive(Clone)]
-struct SelectionState {
-    source_paths: Vec<String>,
-    destination_paths: Vec<String>,
-    workflow_phase: WorkflowPhase,
-}
-
-impl Default for SelectionState {
-    fn default() -> Self {
-        Self {
-            source_paths: Vec::new(),
-            destination_paths: Vec::new(),
-            workflow_phase: WorkflowPhase::Idle,
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,
     cancellations: Arc<Mutex<HashSet<String>>>,
-    selection: Arc<Mutex<SelectionState>>,
+    selection: Arc<Mutex<PersistedSelectionStateDto>>,
 }
 
 impl AppState {
-    fn new(store: Store) -> Self {
-        Self {
+    fn new(store: Store) -> Result<Self, String> {
+        let selection = store.load_selection_state()?.unwrap_or_default();
+        Ok(Self {
             store,
             cancellations: Arc::new(Mutex::new(HashSet::new())),
-            selection: Arc::new(Mutex::new(SelectionState::default())),
-        }
+            selection: Arc::new(Mutex::new(selection)),
+        })
     }
 
     fn request_cancel(&self, job_id: &str) -> Result<(), String> {
@@ -73,7 +58,16 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    fn selection_snapshot(&self) -> Result<SelectionState, String> {
+    fn clear_cancel(&self, job_id: &str) -> Result<(), String> {
+        let mut cancellations = self
+            .cancellations
+            .lock()
+            .map_err(|_| "Failed to lock cancellation state.".to_string())?;
+        cancellations.remove(job_id);
+        Ok(())
+    }
+
+    fn selection_snapshot(&self) -> Result<PersistedSelectionStateDto, String> {
         self.selection
             .lock()
             .map(|selection| selection.clone())
@@ -86,7 +80,7 @@ impl AppState {
             .lock()
             .map_err(|_| "Failed to lock selection state.".to_string())?;
         selection.source_paths = normalize_paths(source_paths);
-        Ok(())
+        self.store.save_selection_state(&selection)
     }
 
     fn set_destination_paths(&self, destination_paths: Vec<String>) -> Result<(), String> {
@@ -95,7 +89,7 @@ impl AppState {
             .lock()
             .map_err(|_| "Failed to lock selection state.".to_string())?;
         selection.destination_paths = normalize_paths(destination_paths);
-        Ok(())
+        self.store.save_selection_state(&selection)
     }
 
     fn set_workflow_phase(&self, workflow_phase: WorkflowPhase) -> Result<(), String> {
@@ -104,7 +98,7 @@ impl AppState {
             .lock()
             .map_err(|_| "Failed to lock selection state.".to_string())?;
         selection.workflow_phase = workflow_phase;
-        Ok(())
+        self.store.save_selection_state(&selection)
     }
 }
 
@@ -112,7 +106,7 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let store = Store::new(app_db_path(app)?)?;
-            app.manage(AppState::new(store));
+            app.manage(AppState::new(store)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -157,13 +151,19 @@ fn app_db_path<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<PathBuf, String
 }
 
 fn normalize_paths(paths: Vec<String>) -> Vec<String> {
-    let mut normalized = Vec::new();
+    let mut normalized: Vec<String> = Vec::new();
     for path in paths {
-        let trimmed = path.trim();
-        if trimmed.is_empty() || normalized.iter().any(|existing| existing == trimmed) {
+        let normalized_path = normalize_selection_path(&path);
+        if normalized_path.is_empty()
+            || normalized
+                .iter()
+                .any(|existing| {
+                    selection_path_key(existing.as_str()) == selection_path_key(&normalized_path)
+                })
+        {
             continue;
         }
-        normalized.push(trimmed.to_string());
+        normalized.push(normalized_path);
     }
     normalized
 }

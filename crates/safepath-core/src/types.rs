@@ -14,6 +14,24 @@ pub struct AppStatusDto {
     pub destination_paths: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedSelectionStateDto {
+    pub source_paths: Vec<String>,
+    pub destination_paths: Vec<String>,
+    pub workflow_phase: WorkflowPhase,
+}
+
+impl Default for PersistedSelectionStateDto {
+    fn default() -> Self {
+        Self {
+            source_paths: Vec::new(),
+            destination_paths: Vec::new(),
+            workflow_phase: WorkflowPhase::Idle,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionReadinessDto {
@@ -30,7 +48,7 @@ pub enum PermissionReadinessState {
     NeedsAttention,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum WorkflowPhase {
     Idle,
@@ -842,14 +860,14 @@ pub enum ProtectionOverrideKind {
     Independent,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanStartedEvent {
     pub job_id: String,
     pub source_paths: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanProgressEvent {
     pub job_id: String,
@@ -859,7 +877,7 @@ pub struct ScanProgressEvent {
     pub latest_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanPageReadyEvent {
     pub job_id: String,
@@ -868,14 +886,14 @@ pub struct ScanPageReadyEvent {
     pub total_entries: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisProgressEvent {
     pub job_id: String,
     pub stage: AnalysisStage,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanReadyEvent {
     pub plan_id: String,
@@ -884,7 +902,7 @@ pub struct PlanReadyEvent {
     pub action_count: u32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionProgressEvent {
     pub session_id: String,
@@ -894,14 +912,14 @@ pub struct ExecutionProgressEvent {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionCompletedEvent {
     pub session_id: String,
     pub status: ExecutionSessionStatus,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AnalysisStage {
     Started,

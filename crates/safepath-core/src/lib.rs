@@ -2,6 +2,7 @@ pub mod analyzer;
 pub mod executor;
 pub mod history;
 pub mod learner;
+pub mod pathing;
 pub mod planner;
 pub mod presets;
 pub mod rules;
@@ -19,7 +20,8 @@ pub use types::{
     GenerateSyntheticDatasetRequest, GenerateSyntheticDatasetResultDto, HistoryEntryDto,
     HistoryPageDto, HistorySessionSummaryDto, LearnerDraftPreviewDto, LearnerObservationDto,
     LearnerSuggestionDto, LearnerSuggestionFeedbackKind, ManifestEntryDto, ManifestEntryKind,
-    ManifestPageDto, PermissionReadinessDto, PermissionReadinessState, PlanDto,
+    ManifestPageDto, PermissionReadinessDto, PermissionReadinessState, PersistedSelectionStateDto,
+    PlanDto,
     PlanDuplicateGroupDto, PlanOptionsDto, PlanReadyEvent, PlanSummaryDto, PlannedActionDto,
     PlannedActionKind, PreflightIssueDto, PreflightIssueSeverity, PresetDefinitionDto,
     ProjectSafetyMode, ProtectionDetectionDto, ProtectionOverrideDto, ProtectionOverrideKind,

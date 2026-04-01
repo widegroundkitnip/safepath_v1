@@ -8,6 +8,7 @@ use std::os::unix::fs::MetadataExt;
 
 use uuid::Uuid;
 
+use crate::pathing::{disambiguated_filename, join_segments};
 use crate::types::{
     ActionRecordDto, ActionRecordStatus, ChecksumMode, ExecutionOperationKind, ExecutionSessionDto,
     ExecutionSessionStatus, ExecutionStrategy, PlanDto, PlannedActionDto, PlannedActionKind,
@@ -605,6 +606,7 @@ fn execute_duplicate_consolidate(
         session_id,
         group_id,
         &action.source_path,
+        &action.source_entry_id,
         ".safepath-duplicates",
     );
     if let Err(error) = create_parent_dirs(&holding_destination) {
@@ -668,6 +670,7 @@ fn execute_delete_to_trash(
         session_id,
         group_id,
         &action.source_path,
+        &action.source_entry_id,
         ".safepath-trash",
     );
     if let Err(error) = create_parent_dirs(&trash_destination) {
@@ -692,19 +695,13 @@ fn group_destination(
     session_id: &str,
     group_id: &str,
     source_path: &str,
+    source_entry_id: &str,
     folder_name: &str,
 ) -> String {
-    let filename = Path::new(source_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("duplicate");
-    format!(
-        "{}/{}/{}/{}/{}",
-        plan.destination_root.trim_end_matches('/'),
-        folder_name.trim_start_matches('/'),
-        session_id,
-        group_id,
-        filename
+    let filename = disambiguated_filename(source_path, source_entry_id);
+    join_segments(
+        &plan.destination_root,
+        &[folder_name, session_id, group_id, filename.as_str()],
     )
 }
 
@@ -1237,6 +1234,101 @@ mod tests {
                     .as_ref()
                     .is_some_and(|path| path.contains(".safepath-trash"))
         }));
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn duplicate_holding_paths_are_disambiguated_for_same_named_files() {
+        let temp_dir = std::env::temp_dir().join(format!("safepath-dup-collision-{}", Uuid::new_v4()));
+        let first_dir = temp_dir.join("camera-a");
+        let second_dir = temp_dir.join("camera-b");
+        fs::create_dir_all(&first_dir).expect("create first dir");
+        fs::create_dir_all(&second_dir).expect("create second dir");
+
+        let keeper = first_dir.join("IMG_0001.JPG");
+        let duplicate_a = first_dir.join("IMG_0002.JPG");
+        let duplicate_b = second_dir.join("IMG_0002.JPG");
+        fs::write(&keeper, b"same").expect("write keeper");
+        fs::write(&duplicate_a, b"same").expect("write duplicate a");
+        fs::write(&duplicate_b, b"same").expect("write duplicate b");
+
+        let plan_root = temp_dir.join("organized");
+        fs::create_dir_all(&plan_root).expect("create plan root");
+
+        let keeper_action = PlannedActionDto {
+            action_id: "keeper-action".to_string(),
+            source_entry_id: "keeper-entry".to_string(),
+            source_path: keeper.to_string_lossy().to_string(),
+            destination_path: None,
+            duplicate_group_id: Some("group-1".to_string()),
+            action_kind: PlannedActionKind::Review,
+            review_state: ReviewState::Approved,
+            explanation: sample_explanation(),
+        };
+        let duplicate_action_a = PlannedActionDto {
+            action_id: "duplicate-action-a".to_string(),
+            source_entry_id: "duplicate-entry-a".to_string(),
+            source_path: duplicate_a.to_string_lossy().to_string(),
+            destination_path: None,
+            duplicate_group_id: Some("group-1".to_string()),
+            action_kind: PlannedActionKind::Review,
+            review_state: ReviewState::Approved,
+            explanation: sample_explanation(),
+        };
+        let duplicate_action_b = PlannedActionDto {
+            action_id: "duplicate-action-b".to_string(),
+            source_entry_id: "duplicate-entry-b".to_string(),
+            source_path: duplicate_b.to_string_lossy().to_string(),
+            destination_path: None,
+            duplicate_group_id: Some("group-1".to_string()),
+            action_kind: PlannedActionKind::Review,
+            review_state: ReviewState::Approved,
+            explanation: sample_explanation(),
+        };
+
+        let duplicate_group = PlanDuplicateGroupDto {
+            group_id: "group-1".to_string(),
+            certainty: DuplicateCertainty::Definite,
+            representative_name: "IMG_0002.JPG".to_string(),
+            item_count: 3,
+            member_action_ids: vec![
+                "keeper-action".to_string(),
+                "duplicate-action-a".to_string(),
+                "duplicate-action-b".to_string(),
+            ],
+            member_entry_ids: vec![
+                "keeper-entry".to_string(),
+                "duplicate-entry-a".to_string(),
+                "duplicate-entry-b".to_string(),
+            ],
+            selected_keeper_entry_id: Some("keeper-entry".to_string()),
+            recommended_keeper_entry_id: Some("keeper-entry".to_string()),
+            recommended_keeper_reason: Some("Newest file".to_string()),
+        };
+
+        let mut plan = sample_plan(
+            vec![keeper_action, duplicate_action_a, duplicate_action_b],
+            vec![duplicate_group],
+        );
+        plan.destination_root = plan_root.to_string_lossy().to_string();
+
+        let session = execute_plan(&mut plan);
+
+        let moved_paths = session
+            .records
+            .iter()
+            .filter(|record| {
+                record.strategy == ExecutionStrategy::DuplicateConsolidate
+                    && record.status == ActionRecordStatus::Completed
+            })
+            .filter_map(|record| record.destination_path.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(session.status, ExecutionSessionStatus::Completed);
+        assert_eq!(moved_paths.len(), 2);
+        assert_ne!(moved_paths[0], moved_paths[1]);
+        assert!(moved_paths.iter().all(|path| path.contains("--duplicate-entry")));
 
         let _ = fs::remove_dir_all(temp_dir);
     }

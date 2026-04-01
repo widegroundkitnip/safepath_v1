@@ -8,6 +8,7 @@ mod plans;
 mod presets;
 mod protection;
 mod scan_jobs;
+mod selection;
 mod util;
 
 use std::path::PathBuf;
@@ -135,7 +136,7 @@ mod tests {
             )
             .expect("migrated metadata");
 
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         assert_eq!(metadata.0, "undo");
         assert_eq!(metadata.1.as_deref(), Some("record-0"));
         assert_eq!(metadata.2, "completed");

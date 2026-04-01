@@ -15,6 +15,11 @@ target
 dist
 dist-ssr
 *.local
+playwright-report
+test-results
+coverage
+sample_reportlab.pdf
+.playwright
 
 # Editor directories and files
 .vscode/*

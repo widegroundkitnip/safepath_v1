@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import type {
+  AnalysisProgressEvent,
   AnalysisSummaryDto,
   AppStatusDto,
   BuildPlanRequest,
@@ -12,14 +13,18 @@ import type {
   GenerateSyntheticDatasetRequest,
   GenerateSyntheticDatasetResultDto,
   HistoryPageDto,
+  JobFailedEvent,
   LearnerDraftPreviewDto,
   LearnerObservationDto,
   LearnerSuggestionDto,
   ManifestPageDto,
   PlanDto,
+  PlanReadyEvent,
   PresetDefinitionDto,
   ProtectionOverrideDto,
   ProtectionOverrideKind,
+  ScanPageReadyEvent,
+  ScanStartedEvent,
   RecordLearnerSuggestionFeedbackRequest,
   SaveLearnerDraftPreviewRequest,
   SetDuplicateKeeperRequest,
@@ -211,8 +216,8 @@ export async function setProtectionOverride(
   return invokeDesktop<ProtectionOverrideDto>('set_protection_override', { path, overrideKind })
 }
 
-export async function runExpensiveAnalysis(jobId: string): Promise<AnalysisSummaryDto> {
-  return invokeDesktop<AnalysisSummaryDto>('run_expensive_analysis', { jobId })
+export async function runExpensiveAnalysis(jobId: string): Promise<void> {
+  return invokeDesktop<void>('run_expensive_analysis', { jobId })
 }
 
 export async function onScanProgress(
@@ -223,6 +228,62 @@ export async function onScanProgress(
   }
 
   return listen<ScanProgressEvent>('scan_progress', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function onScanStarted(
+  handler: (payload: ScanStartedEvent) => void,
+): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<ScanStartedEvent>('scan_started', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function onScanPageReady(
+  handler: (payload: ScanPageReadyEvent) => void,
+): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<ScanPageReadyEvent>('scan_page_ready', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function onAnalysisProgress(
+  handler: (payload: AnalysisProgressEvent) => void,
+): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<AnalysisProgressEvent>('analysis_progress', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function onPlanReady(handler: (payload: PlanReadyEvent) => void): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<PlanReadyEvent>('plan_ready', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function onJobFailed(handler: (payload: JobFailedEvent) => void): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<JobFailedEvent>('job_failed', (event) => {
     handler(event.payload)
   })
 }

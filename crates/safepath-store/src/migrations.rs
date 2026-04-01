@@ -7,7 +7,7 @@ use crate::util::{action_record_status_code, execution_operation_kind_code};
 
 use super::Store;
 
-const LATEST_SCHEMA_VERSION: i32 = 2;
+const LATEST_SCHEMA_VERSION: i32 = 3;
 
 pub(crate) fn initialize_schema(store: &Store) -> Result<(), String> {
     if let Some(parent) = store.db_path.parent() {
@@ -41,6 +41,11 @@ pub(crate) fn initialize_schema(store: &Store) -> Result<(), String> {
     if current_version < 2 {
         migrate_v1_to_v2(&connection)?;
         current_version = 2;
+    }
+
+    if current_version < 3 {
+        migrate_v2_to_v3(&connection)?;
+        current_version = 3;
     }
 
     create_latest_schema(&connection)?;
@@ -157,6 +162,11 @@ fn create_latest_schema(connection: &Connection) -> Result<(), String> {
                 payload_json TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS app_state (
+                state_key TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_scan_sources_job_id ON scan_sources (job_id);
             CREATE INDEX IF NOT EXISTS idx_manifest_entries_job_id ON manifest_entries (job_id);
             CREATE INDEX IF NOT EXISTS idx_manifest_entries_path ON manifest_entries (job_id, path);
@@ -178,6 +188,19 @@ fn migrate_v1_to_v2(connection: &Connection) -> Result<(), String> {
 
     backfill_action_record_metadata(connection)?;
     Ok(())
+}
+
+fn migrate_v2_to_v3(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS app_state (
+                state_key TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL
+            );
+            ",
+        )
+        .map_err(|error| error.to_string())
 }
 
 fn backfill_action_record_metadata(connection: &Connection) -> Result<(), String> {

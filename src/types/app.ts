@@ -327,6 +327,37 @@ export interface ScanProgressEvent {
   latestPath: string | null
 }
 
+export interface ScanStartedEvent {
+  jobId: string
+  sourcePaths: string[]
+}
+
+export interface ScanPageReadyEvent {
+  jobId: string
+  page: number
+  pageSize: number
+  totalEntries: number
+}
+
+export type AnalysisStage = 'started' | 'completed'
+
+export interface AnalysisProgressEvent {
+  jobId: string
+  stage: AnalysisStage
+}
+
+export interface PlanReadyEvent {
+  planId: string
+  jobId: string
+  presetId: string
+  actionCount: number
+}
+
+export interface JobFailedEvent {
+  jobId: string
+  message: string
+}
+
 export interface CategoryCountDto {
   category: FileCategory
   count: number

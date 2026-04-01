@@ -4,6 +4,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::analyzer::classify_entry;
+use crate::pathing::{join_path, path_is_within};
 use crate::rules::{describe_conditions, rule_matches};
 use crate::templates::render_destination_template;
 use crate::types::{
@@ -555,21 +556,8 @@ fn protection_rank(state: ProtectionState) -> u8 {
     }
 }
 
-fn path_is_within(path: &str, ancestor: &str) -> bool {
-    path == ancestor
-        || path
-            .strip_prefix(ancestor)
-            .map(|suffix| suffix.starts_with('/'))
-            .unwrap_or(false)
-}
-
 fn join_destination(root: &str, rendered_template: &str, filename: &str) -> String {
-    let root = root.trim_end_matches('/');
-    if rendered_template.is_empty() {
-        format!("{root}/{filename}")
-    } else {
-        format!("{root}/{rendered_template}/{filename}")
-    }
+    join_path(root, rendered_template, filename)
 }
 
 #[cfg(test)]

@@ -1,73 +1,141 @@
-# React + TypeScript + Vite
+# Safepath
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Safepath is a desktop file-organizing workflow built with Tauri, Rust, React, and SQLite. It scans one or more source folders, analyzes structure and duplicate signals, builds a reviewable organization plan from presets/rules, executes filesystem changes with safety checks, and keeps execution history for best-effort undo.
 
-Currently, two official plugins are available:
+## What It Does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Scans source trees and stores manifest rows in SQLite.
+- Runs cheap analysis automatically after a scan and optional expensive duplicate hashing on demand.
+- Detects likely protected/project-like paths and keeps them visible during review.
+- Builds plan actions from built-in presets and destination templates.
+- Supports duplicate review with explicit keeper selection.
+- Executes same-volume moves, cross-volume safe moves, copy-only review actions, and duplicate holding/trash-hold flows.
+- Stores execution history and supports best-effort undo.
+- Generates realistic sparse synthetic datasets for scanning and demo/testing workflows.
 
-## React Compiler
+## Current Maturity
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Safepath is early-alpha software. The organizer engine is substantive, but the trust model is still evolving.
 
-## Expanding the ESLint configuration
+- Planning and execution are not transactional.
+- Undo is best-effort, not snapshot-based recovery.
+- Symlink execution and hashing are intentionally unsupported today.
+- Desktop runtime is required for real filesystem work; the browser build is a fallback shell only.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Repo Layout
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- `src/`: React UI and Tauri client wrappers.
+- `src-tauri/`: Tauri desktop shell and command handlers.
+- `crates/safepath-core/`: planner, analyzer, executor, templates, learner logic, synthetic dataset generation.
+- `crates/safepath-store/`: SQLite schema, migrations, and persistence helpers.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Toolchain
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Tested locally with:
+
+- Node `25.8.1`
+- npm `11.11.0`
+- Rust `1.94.1`
+- Cargo `1.94.1`
+
+Pinned repo files:
+
+- `.nvmrc`
+- `rust-toolchain.toml`
+
+## Prerequisites
+
+Install:
+
+- Node/npm matching `.nvmrc`
+- Rust toolchain matching `rust-toolchain.toml`
+- OS dependencies required by Tauri 2 for your platform
+
+On macOS, the usual Xcode command-line tools are required.
+
+## Getting Started
+
+```bash
+npm ci
+cargo test --workspace
+npm run tauri:dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Useful commands:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `npm run dev`: Vite browser shell only
+- `npm run build`: TypeScript compile + Vite build
+- `npm run lint`: ESLint
+- `npm run test`: frontend smoke tests
+- `npm run test:e2e`: browser E2E smoke flow
+- `npm run tauri:dev`: desktop app in development
+- `npm run tauri:build`: packaged desktop build
+- `cargo test --workspace`: Rust unit/integration tests
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+If Cargo cannot write to your global cache in a restricted environment, use a local cargo home:
+
+```bash
+CARGO_HOME="$PWD/.cargo-home" cargo test --workspace
 ```
+
+## Core Workflow
+
+1. Enter one or more absolute source paths.
+2. Enter a destination folder.
+3. Run readiness check.
+4. Start scan.
+5. Review cheap analysis, then optionally run expensive analysis.
+6. Build a plan from a preset.
+7. Approve/reject actions and choose duplicate keepers where required.
+8. Execute approved actions.
+9. Inspect history and use best-effort undo if needed.
+
+## Synthetic Test Data
+
+The Settings view includes a synthetic dataset generator. It can create messy multi-folder datasets with fake files and sparse large placeholders that report large logical sizes without consuming equivalent disk space.
+
+Use it to:
+
+- generate a realistic scan source quickly
+- simulate large-media-heavy libraries
+- test duplicate analysis and plan generation
+
+Large synthetic sparse files are tagged through a dataset manifest so expensive hashing can skip them safely during analysis.
+
+## Safety Notes
+
+- Same-volume moves can be checksum-verified.
+- Cross-volume moves use copy, verify, then remove.
+- Duplicate cleanup moves non-keeper files into Safepath holding folders first.
+- Equivalent path inputs are normalized before being stored.
+- Duplicate holding destinations are now disambiguated with stable suffixes to avoid basename collisions.
+
+Current limitations:
+
+- Symlink hashing/execution is not supported.
+- Plans can go stale if the filesystem changes between scan, review, and execute.
+- Recovery after crashes is continuity-oriented, not transactional.
+
+## Testing And CI
+
+CI runs:
+
+- `npm run lint`
+- `npm run build`
+- `npm run test`
+- `cargo test --workspace`
+
+The frontend test layer focuses on smoke coverage for the orchestration UI. Browser E2E coverage is intentionally light and currently targets a happy-path workflow.
+
+## Troubleshooting
+
+- If the app shows the browser fallback, launch through `npm run tauri:dev` instead of plain Vite.
+- If readiness fails, verify the destination folder exists and the app has filesystem access to both source and destination paths.
+- If duplicate hashing is slow on very large real-world libraries, avoid running expensive analysis until the scan completes and use smaller test sources when iterating.
+
+## Known Gaps
+
+- No transactional recovery journal.
+- No desktop-native E2E automation harness yet.
+- Accessibility and observability are still limited.
+- Multi-destination workflows are not productized even though some storage primitives exist.

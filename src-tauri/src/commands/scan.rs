@@ -4,6 +4,7 @@ use safepath_core::{
     ScanJobState, ScanJobStatusDto, ScanPageReadyEvent, ScanProgressEvent, ScanStartedEvent,
     StartScanRequest, WorkflowPhase,
 };
+use std::thread;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::AppState;
@@ -63,7 +64,7 @@ pub fn start_scan(
     let job_id = status.job_id.clone();
     let source_paths = status.source_paths.clone();
 
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         let result = scanner::scan_sources(
             &source_paths,
             |entry| {
@@ -150,6 +151,7 @@ pub fn start_scan(
                     worker_state
                         .store
                         .set_scan_state(&job_id, final_state, final_error.as_deref());
+                let _ = worker_state.clear_cancel(&job_id);
                 let _ = worker_state.set_workflow_phase(WorkflowPhase::Idle);
             }
             Err(error) => {
@@ -157,6 +159,7 @@ pub fn start_scan(
                     worker_state
                         .store
                         .set_scan_state(&job_id, ScanJobState::Failed, Some(&error));
+                let _ = worker_state.clear_cancel(&job_id);
                 let _ = worker_state.set_workflow_phase(WorkflowPhase::Idle);
                 let _ = worker_app.emit(
                     "job_failed",
@@ -234,7 +237,11 @@ pub fn run_expensive_analysis(
     app: AppHandle,
     state: State<'_, AppState>,
     job_id: String,
-) -> Result<AnalysisSummaryDto, String> {
+) -> Result<(), String> {
+    if state.selection_snapshot()?.workflow_phase == WorkflowPhase::Analyzing {
+        return Err("Analysis is already running.".to_string());
+    }
+
     state.set_workflow_phase(WorkflowPhase::Analyzing)?;
     app.emit(
         "analysis_progress",
@@ -245,38 +252,41 @@ pub fn run_expensive_analysis(
     )
     .map_err(|error| error.to_string())?;
 
-    let result = (|| -> Result<AnalysisSummaryDto, String> {
-        let entries = state.store.get_manifest_entries(&job_id)?;
-        let protection_overrides = state.store.get_protection_overrides()?;
-        let summary = analyzer::run_expensive_analysis(&job_id, &entries, &protection_overrides)?;
-        state.store.save_analysis_summary(&summary)?;
-        Ok(summary)
-    })();
-
-    state.set_workflow_phase(WorkflowPhase::Idle)?;
-
-    match result {
-        Ok(summary) => {
-            app.emit(
-                "analysis_progress",
-                AnalysisProgressEvent {
-                    job_id,
-                    stage: AnalysisStage::Completed,
-                },
-            )
-            .map_err(|error| error.to_string())?;
+    let worker_app = app.clone();
+    let worker_state = state.inner().clone();
+    thread::spawn(move || {
+        let result = (|| -> Result<AnalysisSummaryDto, String> {
+            let entries = worker_state.store.get_manifest_entries(&job_id)?;
+            let protection_overrides = worker_state.store.get_protection_overrides()?;
+            let summary =
+                analyzer::run_expensive_analysis(&job_id, &entries, &protection_overrides)?;
+            worker_state.store.save_analysis_summary(&summary)?;
             Ok(summary)
+        })();
+
+        let _ = worker_state.set_workflow_phase(WorkflowPhase::Idle);
+
+        match result {
+            Ok(_) => {
+                let _ = worker_app.emit(
+                    "analysis_progress",
+                    AnalysisProgressEvent {
+                        job_id,
+                        stage: AnalysisStage::Completed,
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = worker_app.emit(
+                    "job_failed",
+                    serde_json::json!({
+                        "jobId": job_id,
+                        "message": error,
+                    }),
+                );
+            }
         }
-        Err(error) => {
-            app.emit(
-                "job_failed",
-                serde_json::json!({
-                    "jobId": job_id,
-                    "message": error,
-                }),
-            )
-            .map_err(|emit_error| emit_error.to_string())?;
-            Err(error)
-        }
-    }
+    });
+
+    Ok(())
 }
