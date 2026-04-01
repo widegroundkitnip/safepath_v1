@@ -72,6 +72,36 @@ Useful commands:
 - `npm run tauri:build`: packaged desktop build
 - `cargo test --workspace`: Rust unit/integration tests
 
+## Packaged desktop app (installed build)
+
+The release app loads the UI from files inside the bundle (no Vite dev server, no port 1420).
+
+```bash
+npm ci
+npm run tauri:build
+```
+
+On macOS, Tauri writes artifacts under:
+
+- `src-tauri/target/release/bundle/macos/Safepath.app`
+- `src-tauri/target/release/bundle/dmg/Safepath_*_aarch64.dmg` (or `x64` on Intel)
+
+Open the `.app` or mount the `.dmg` and drag **Safepath** to **Applications**.
+
+The `tauri:build` script unsets `CI` for the Tauri CLI. Some environments (including IDEs) set `CI=1`, which would otherwise make `tauri build` fail with an invalid `--ci` value. On **Windows** (no `env -u`), run `set CI=` in **cmd** before `npx tauri build`, or use **Git Bash** / **WSL** with the npm script as written.
+
+### Distribution: code signing and notarization (optional)
+
+For **your own machine**, an unsigned local build is usually enough (you may need to allow the app in **System Settings → Privacy & Security** the first time).
+
+To **ship to other Mac users** without Gatekeeper warnings, use an Apple Developer account and:
+
+1. Create a **Developer ID Application** certificate in Keychain.
+2. Set **`bundle.macOS.signingIdentity`** in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) to that identity, or follow Tauri’s guide for **CI** signing (for example importing a certificate via **`APPLE_CERTIFICATE`** so the identity is inferred).
+3. Enable **notarization** using the method Tauri documents for your release (Apple ID + app-specific password and/or **API key** variables such as **`APPLE_API_KEY`** / **`APPLE_API_ISSUER`** / **`APPLE_API_KEY_PATH`** on CI).
+
+Environment variable names and steps are defined in the current [Tauri distribution](https://v2.tauri.app/distribute/) documentation; follow that page when you enable signing.
+
 If Cargo cannot write to your global cache in a restricted environment, use a local cargo home:
 
 ```bash

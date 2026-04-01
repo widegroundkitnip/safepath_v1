@@ -13,7 +13,7 @@
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=.playwright playwright test",
     "test:e2e:install": "PLAYWRIGHT_BROWSERS_PATH=.playwright playwright install chromium",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "env -u CI tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
