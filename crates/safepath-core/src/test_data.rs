@@ -22,17 +22,19 @@ pub fn generate_synthetic_dataset(
     if request.output_root.trim().is_empty() {
         return Err("Choose an output root folder for synthetic data.".to_string());
     }
-    if !output_root.exists() {
-        return Err(format!(
-            "Output root `{}` must already exist.",
-            output_root.display()
-        ));
-    }
-    if !output_root.is_dir() {
+    if output_root.exists() && !output_root.is_dir() {
         return Err(format!(
             "Output root `{}` must be a folder.",
             output_root.display()
         ));
+    }
+    if !output_root.exists() {
+        fs::create_dir_all(output_root).map_err(|error| {
+            format!(
+                "Could not create output root `{}`: {error}",
+                output_root.display()
+            )
+        })?;
     }
 
     let dataset_name = sanitize_dataset_name(&request.dataset_name)?;
@@ -852,6 +854,30 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(output_root);
+    }
+
+    #[test]
+    fn creates_missing_output_root() {
+        let output_root = temp_dir("synthetic-data-missing-output");
+        assert!(!output_root.exists());
+
+        let request = GenerateSyntheticDatasetRequest {
+            output_root: output_root.to_string_lossy().to_string(),
+            dataset_name: "Fresh Root Dataset".to_string(),
+            categories: vec![SyntheticDatasetCategory::Documents],
+            max_depth: 2,
+            messiness_level: 2,
+            duplicate_rate_percent: 5,
+            include_hidden_files: false,
+            include_empty_folders: false,
+            target_apparent_size_bytes: 0,
+        };
+
+        let result = generate_synthetic_dataset(&request).expect("generate dataset");
+        assert!(output_root.exists());
+        assert!(output_root.join(&result.dataset_name).exists());
+
+        let _ = fs::remove_dir_all(&output_root);
     }
 
     #[test]

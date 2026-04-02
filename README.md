@@ -122,7 +122,7 @@ CARGO_HOME="$PWD/.cargo-home" cargo test --workspace
 
 ## Synthetic Test Data
 
-The Settings view includes a synthetic dataset generator. It can create messy multi-folder datasets with fake files and sparse large placeholders that report large logical sizes without consuming equivalent disk space.
+The Settings view includes a synthetic dataset generator. It can create messy multi-folder datasets with fake files and sparse large placeholders that report large logical sizes without consuming equivalent disk space. The output root path you enter is created if it does not exist (parent directories included).
 
 Use it to:
 

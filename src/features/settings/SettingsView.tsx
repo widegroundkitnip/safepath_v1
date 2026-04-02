@@ -117,7 +117,8 @@ export function SettingsView({
           <p className="status-card__summary">
             Create a realistic, messy folder tree with fake files and sparse large placeholders. The
             generated root can then be used as a scan source without consuming the real disk space
-            suggested by the apparent file sizes.
+            suggested by the apparent file sizes. The output root folder is created if it does not
+            exist yet.
           </p>
           <label className="field-label" htmlFor="synthetic-output-root">
             Output root folder
@@ -126,7 +127,7 @@ export function SettingsView({
             id="synthetic-output-root"
             className="text-input"
             onChange={(event) => onSyntheticOutputRootChange(event.target.value)}
-            placeholder="/Volumes/TestData or /Users/name/Desktop"
+            placeholder="/Users/name/Downloads/Testdata (created if missing)"
             type="text"
             value={syntheticOutputRoot}
           />

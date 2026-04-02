@@ -21,6 +21,7 @@ import {
   getManifestPage,
   getPlan,
   isDesktopRuntimeAvailable,
+  messageFromInvokeError,
   onAnalysisProgress,
   onExecutionCompleted,
   onExecutionProgress,
@@ -857,7 +858,9 @@ function App() {
       })
       setSyntheticDatasetResult(result)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to generate synthetic data.')
+      setError(
+        messageFromInvokeError(nextError, 'Failed to generate synthetic data.'),
+      )
     } finally {
       setIsGeneratingSyntheticData(false)
     }
@@ -890,9 +893,7 @@ function App() {
       await startScanFlow([result.rootPath], draftDestinationPaths)
     } catch (nextError) {
       setError(
-        nextError instanceof Error
-          ? nextError.message
-          : 'Failed to generate and scan synthetic data.',
+        messageFromInvokeError(nextError, 'Failed to generate and scan synthetic data.'),
       )
     } finally {
       setIsGeneratingSyntheticData(false)

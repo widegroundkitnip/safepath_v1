@@ -47,6 +47,23 @@ export function isDesktopRuntimeAvailable() {
   return hasTauriRuntime()
 }
 
+/** Tauri `invoke` rejects with a string for `Result::Err` from Rust, not always `Error`. */
+export function messageFromInvokeError(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    return error.message || fallback
+  }
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const msg = (error as { message: unknown }).message
+    if (typeof msg === 'string' && msg.trim().length > 0) {
+      return msg
+    }
+  }
+  return fallback
+}
+
 function desktopOnlyError(commandName: string) {
   return new Error(
     `Safepath desktop command "${commandName}" is unavailable in the browser fallback. Launch the Tauri desktop app to scan, review, execute, undo, and persist file-organizing work.`,
