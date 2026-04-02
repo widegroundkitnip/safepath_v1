@@ -674,6 +674,85 @@ mod tests {
     }
 
     #[test]
+    fn downloads_cleanup_reviews_code_leftovers() {
+        let preset = get_preset("downloads_cleanup").expect("preset");
+        let entry = manifest_entry(
+            "code-1",
+            "/source/script.py",
+            "script.py",
+            Some("py"),
+            1_704_067_200_000,
+        );
+
+        let plan = build_plan(
+            "job-downloads",
+            &[entry],
+            &empty_analysis("job-downloads"),
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan");
+
+        assert_eq!(plan.summary.review_actions, 1);
+        assert_eq!(plan.actions[0].action_kind, PlannedActionKind::Review);
+        assert_eq!(plan.actions[0].destination_path, None);
+    }
+
+    #[test]
+    fn screenshots_cleanup_moves_matching_images() {
+        let preset = get_preset("screenshots_cleanup").expect("preset");
+        let entry = manifest_entry(
+            "shot-1",
+            "/source/Screen Shot 2024-01-12 at 10.15.00.png",
+            "Screen Shot 2024-01-12 at 10.15.00.png",
+            Some("png"),
+            1_704_067_200_000,
+        );
+
+        let plan = build_plan(
+            "job-screenshots",
+            &[entry],
+            &empty_analysis("job-screenshots"),
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan");
+
+        assert_eq!(plan.summary.move_actions, 1);
+        assert_eq!(
+            plan.actions[0].destination_path.as_deref(),
+            Some("/dest/Screenshots/2024/01/Screen Shot 2024-01-12 at 10.15.00.png")
+        );
+    }
+
+    #[test]
+    fn camera_import_routes_raw_photos_into_raw_folder() {
+        let preset = get_preset("camera_import").expect("preset");
+        let entry = manifest_entry(
+            "raw-1",
+            "/source/DSC_0001.NEF",
+            "DSC_0001.NEF",
+            Some("NEF"),
+            1_704_067_200_000,
+        );
+
+        let plan = build_plan(
+            "job-camera",
+            &[entry],
+            &empty_analysis("job-camera"),
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan");
+
+        assert_eq!(plan.summary.move_actions, 1);
+        assert_eq!(
+            plan.actions[0].destination_path.as_deref(),
+            Some("/dest/Photos/2024/01/RAW/DSC_0001.NEF")
+        );
+    }
+
+    #[test]
     fn detects_destination_collisions_between_actions() {
         let preset = get_preset("general_organize").expect("preset");
         let entries = vec![

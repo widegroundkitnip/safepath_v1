@@ -13,6 +13,7 @@ import {
   generateSyntheticDataset,
   getAnalysisSummary,
   getAppStatus,
+  getExecutionPreflight,
   getExecutionStatus,
   getHistoryPage,
   getLearnerDraftPreviews,
@@ -58,6 +59,7 @@ import type {
   ManifestPageDto,
   PlanDuplicateGroupDto,
   PlanDto,
+  PreflightIssueDto,
   PresetDefinitionDto,
   ProtectionDetectionDto,
   ReviewDecision,
@@ -101,6 +103,7 @@ function App() {
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const [plan, setPlan] = useState<PlanDto | null>(null)
   const [executionSession, setExecutionSession] = useState<ExecutionSessionDto | null>(null)
+  const [executionPreflightIssues, setExecutionPreflightIssues] = useState<PreflightIssueDto[]>([])
   const [reviewPageIndex, setReviewPageIndex] = useState(0)
   const [reviewGroupPageIndex, setReviewGroupPageIndex] = useState(0)
   const [analysisDuplicatePageIndex, setAnalysisDuplicatePageIndex] = useState(0)
@@ -124,6 +127,7 @@ function App() {
   const [isBuildingPlan, setIsBuildingPlan] = useState(false)
   const [isUpdatingReview, setIsUpdatingReview] = useState(false)
   const [isExecutingPlan, setIsExecutingPlan] = useState(false)
+  const [isLoadingExecutionPreflight, setIsLoadingExecutionPreflight] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isUndoingHistory, setIsUndoingHistory] = useState(false)
   const [activeLearnerSuggestionId, setActiveLearnerSuggestionId] = useState<string | null>(null)
@@ -221,6 +225,15 @@ function App() {
     null
   const approvedActionCount =
     plan?.actions.filter((action) => action.reviewState === 'approved').length ?? 0
+  const executionPreflightErrors = useMemo(
+    () => executionPreflightIssues.filter((issue) => issue.severity === 'error'),
+    [executionPreflightIssues],
+  )
+  const executionPreflightWarnings = useMemo(
+    () => executionPreflightIssues.filter((issue) => issue.severity === 'warning'),
+    [executionPreflightIssues],
+  )
+  const hasExecutionPreflightErrors = executionPreflightErrors.length > 0
   const executionIsActive =
     isExecutingPlan ||
     executionSession?.status === 'pending' ||
@@ -513,6 +526,7 @@ function App() {
   useEffect(() => {
     if (!plan) {
       setSelectedActionId(null)
+      setExecutionPreflightIssues([])
       return
     }
 
@@ -525,6 +539,19 @@ function App() {
     setReviewPageIndex(0)
     setReviewGroupPageIndex(0)
   }, [plan?.planId])
+
+  useEffect(() => {
+    if (!plan?.planId || executionIsActive) {
+      return
+    }
+
+    if (approvedActionCount === 0) {
+      setExecutionPreflightIssues([])
+      return
+    }
+
+    void loadExecutionPreflight(plan.planId, false)
+  }, [plan, approvedActionCount, executionIsActive])
 
   useEffect(() => {
     setReviewPageIndex(0)
@@ -984,6 +1011,26 @@ function App() {
     }
   }
 
+  async function loadExecutionPreflight(planId: string, surfaceErrors = true) {
+    setIsLoadingExecutionPreflight(true)
+    try {
+      const issues = await getExecutionPreflight(planId)
+      setExecutionPreflightIssues(issues)
+      return issues
+    } catch (nextError) {
+      if (surfaceErrors) {
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : 'Failed to load execution readiness checks.',
+        )
+      }
+      return null
+    } finally {
+      setIsLoadingExecutionPreflight(false)
+    }
+  }
+
   async function handleReviewDecision(actionIds: string[], decision: ReviewDecision) {
     if (!plan?.planId || actionIds.length === 0) {
       return
@@ -1078,6 +1125,16 @@ function App() {
     setIsExecutingPlan(true)
     setExecutionRecordPageIndex(0)
     try {
+      const latestPreflightIssues = await loadExecutionPreflight(plan.planId)
+      if (!latestPreflightIssues) {
+        setIsExecutingPlan(false)
+        return
+      }
+      if (latestPreflightIssues.some((issue) => issue.severity === 'error')) {
+        setIsExecutingPlan(false)
+        return
+      }
+
       const session = await executePlan({ planId: plan.planId })
       setExecutionSession(session)
       if (session.status !== 'pending' && session.status !== 'running') {
@@ -1506,10 +1563,77 @@ function App() {
                     </div>
                   </dl>
                   <p className="status-card__summary">Destination root: {plan.destinationRoot}</p>
+                  {approvedActionCount > 0 ? (
+                    <div className="detail-stack">
+                      <div className="status-card__header">
+                        <div>
+                          <p className="status-card__eyebrow">Execution checks</p>
+                          <h3>
+                            {hasExecutionPreflightErrors
+                              ? 'Fix blocking issues before execute'
+                              : executionPreflightWarnings.length > 0
+                                ? 'Warnings to review before execute'
+                                : 'Ready to execute'}
+                          </h3>
+                        </div>
+                        <span className="status-pill status-pill--neutral">
+                          {executionPreflightIssues.length} issue
+                          {executionPreflightIssues.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <p className="status-card__summary">
+                        Safepath checks approved actions before it moves anything, then runs the same
+                        guardrails again at execute time.
+                      </p>
+                      {isLoadingExecutionPreflight ? (
+                        <p className="status-card__summary">Refreshing execution checks…</p>
+                      ) : executionPreflightIssues.length === 0 ? (
+                        <p className="status-card__summary">
+                          No blocking issues found. If files change again before you run the plan,
+                          Safepath will re-check the plan at execution time.
+                        </p>
+                      ) : (
+                        <>
+                          {executionPreflightWarnings.length > 0 ? (
+                            <p className="status-card__summary">
+                              Warnings do not block execution. They usually mean a source path changed
+                              since the last scan, so this plan may be stale.
+                            </p>
+                          ) : null}
+                          <ul className="status-card__list">
+                            {executionPreflightIssues.map((issue, index) => (
+                              <li key={`${issue.actionId ?? 'session'}-${index}`}>
+                                {issue.severity}: {issue.message}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                      <div className="button-row button-row--compact">
+                        <button
+                          className="action-button action-button--secondary"
+                          disabled={isLoadingExecutionPreflight}
+                          onClick={() => void loadExecutionPreflight(plan.planId)}
+                          type="button"
+                        >
+                          {isLoadingExecutionPreflight ? 'Refreshing checks…' : 'Refresh checks'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="status-card__summary">
+                      Approve one or more actions to unlock execution checks and the final run step.
+                    </p>
+                  )}
                   <div className="button-row">
                     <button
                       className="action-button"
-                      disabled={executionIsActive || approvedActionCount === 0}
+                      disabled={
+                        executionIsActive ||
+                        approvedActionCount === 0 ||
+                        isLoadingExecutionPreflight ||
+                        hasExecutionPreflightErrors
+                      }
                       onClick={handleExecutePlan}
                       type="button"
                     >
@@ -1717,14 +1841,24 @@ function App() {
                       executionSession.skippedActionCount}
                     /{executionSession.approvedActionCount}
                   </p>
+                  <p className="status-card__summary">
+                    Undo remains best-effort after execution. Safepath can only reverse actions that
+                    still have a valid destination or holding path and were recorded as rollback-safe.
+                  </p>
                   {executionSession.preflightIssues.length > 0 ? (
-                    <ul className="status-card__list">
-                      {executionSession.preflightIssues.map((issue, index) => (
-                        <li key={`${issue.actionId ?? 'session'}-${index}`}>
-                          {issue.severity}: {issue.message}
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <p className="status-card__summary">
+                        Safepath recorded these final execution checks before the run started. Warning
+                        items usually mean the plan may be stale.
+                      </p>
+                      <ul className="status-card__list">
+                        {executionSession.preflightIssues.map((issue, index) => (
+                          <li key={`${issue.actionId ?? 'session'}-${index}`}>
+                            {issue.severity}: {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   ) : null}
                   {executionSession.records.length > 0 ? (
                     <>

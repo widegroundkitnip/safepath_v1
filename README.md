@@ -61,6 +61,8 @@ cargo test --workspace
 npm run tauri:dev
 ```
 
+For a user-facing explanation of Safepath's workflow and trust language, see [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
+
 Useful commands:
 
 - `npm run dev`: Vite browser shell only
@@ -139,6 +141,13 @@ Large synthetic sparse files are tagged through a dataset manifest so expensive 
 - Duplicate cleanup moves non-keeper files into Safepath holding folders first.
 - Equivalent path inputs are normalized before being stored.
 - Duplicate holding destinations are now disambiguated with stable suffixes to avoid basename collisions.
+
+Terminology:
+
+- **Stale plan**: the filesystem changed after scan or review, so a previously safe-looking action may need to be re-checked.
+- **Holding**: a Safepath-managed destination used to move duplicate non-keepers out of the main library without hard-deleting them.
+- **Trash holding**: the Safepath-managed trash area used by duplicate-review cleanup flows.
+- **Best-effort undo**: Safepath can attempt to reverse some completed actions when it still has enough trustworthy history and paths, but it is not a snapshot restore system.
 
 Current limitations:
 

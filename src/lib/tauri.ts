@@ -20,6 +20,7 @@ import type {
   ManifestPageDto,
   PlanDto,
   PlanReadyEvent,
+  PreflightIssueDto,
   PresetDefinitionDto,
   ProtectionOverrideDto,
   ProtectionOverrideKind,
@@ -142,6 +143,10 @@ export async function setDuplicateKeeper(request: SetDuplicateKeeperRequest): Pr
 
 export async function executePlan(request: ExecutePlanRequest): Promise<ExecutionSessionDto> {
   return invokeDesktop<ExecutionSessionDto>('execute_plan', { request })
+}
+
+export async function getExecutionPreflight(planId: string): Promise<PreflightIssueDto[]> {
+  return invokeDesktop<PreflightIssueDto[]>('get_execution_preflight', { planId })
 }
 
 export async function getExecutionStatus(

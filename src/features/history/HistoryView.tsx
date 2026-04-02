@@ -57,8 +57,9 @@ export function HistoryView({
           </span>
         </header>
         <p className="status-card__summary">
-          Inspect past execution records, open their sessions, and see core-owned undo readiness
-          without re-parsing stored JSON in the frontend.
+          Inspect past execution records, open their sessions, and see when best-effort undo is
+          still available. Safepath records undo readiness from executor-owned history rather than
+          guessing in the frontend.
         </p>
         {historyPage?.entries.length ? (
           <p className="status-card__summary">
@@ -116,7 +117,7 @@ export function HistoryView({
                     entry.undoEligible ? 'status-pill--ready' : 'status-pill--needsAttention'
                   }`}
                 >
-                  {entry.undoEligible ? 'undo ready' : 'undo unavailable'}
+                  {entry.undoEligible ? 'best-effort undo ready' : 'best-effort undo unavailable'}
                 </span>
               </li>
             ))}
@@ -148,7 +149,7 @@ export function HistoryView({
               <p>Strategy: {formatExecutionStrategy(selectedHistoryRecord.strategy)}</p>
               <p>Finished: {formatTimestamp(selectedHistoryRecord.finishedAtEpochMs)}</p>
               <p>
-                Undo:{' '}
+                Best-effort undo:{' '}
                 {selectedHistoryRecord.undoEligible
                   ? 'Available now.'
                   : selectedHistoryRecord.undoBlockedReason ?? 'Unavailable.'}
@@ -173,7 +174,7 @@ export function HistoryView({
         ) : (
           <div className="empty-card">
             <strong>Select a record</strong>
-            <p>Pick a history entry to inspect its strategy, outcome, and undo readiness.</p>
+            <p>Pick a history entry to inspect its strategy, outcome, and best-effort undo status.</p>
           </div>
         )}
         {selectedHistorySession ? (
@@ -210,6 +211,10 @@ export function HistoryView({
                 : '. '}
               Started {formatTimestamp(selectedHistorySession.startedAtEpochMs)} and finished{' '}
               {formatTimestamp(selectedHistorySession.finishedAtEpochMs)}
+            </p>
+            <p className="status-card__summary">
+              Undo is best-effort: Safepath can only reverse actions that still have a valid
+              destination or holding path and were recorded as rollback-safe.
             </p>
             <div className="button-row">
               <button

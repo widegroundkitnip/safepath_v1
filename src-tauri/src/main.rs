@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use commands::app::{get_app_status, select_destinations, select_sources};
-use commands::execution::{execute_plan, get_execution_status, undo_record, undo_session};
+use commands::execution::{
+    execute_plan, get_execution_preflight, get_execution_status, undo_record, undo_session,
+};
 use commands::learner::{
     get_learner_draft_previews, get_learner_observations, get_learner_suggestions,
     record_learner_suggestion_feedback, save_learner_draft_as_preset,
@@ -118,6 +120,7 @@ fn main() {
             get_plan,
             update_review_state,
             set_duplicate_keeper,
+            get_execution_preflight,
             execute_plan,
             get_execution_status,
             undo_record,
@@ -155,11 +158,9 @@ fn normalize_paths(paths: Vec<String>) -> Vec<String> {
     for path in paths {
         let normalized_path = normalize_selection_path(&path);
         if normalized_path.is_empty()
-            || normalized
-                .iter()
-                .any(|existing| {
-                    selection_path_key(existing.as_str()) == selection_path_key(&normalized_path)
-                })
+            || normalized.iter().any(|existing| {
+                selection_path_key(existing.as_str()) == selection_path_key(&normalized_path)
+            })
         {
             continue;
         }

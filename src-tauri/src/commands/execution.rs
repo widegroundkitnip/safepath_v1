@@ -1,11 +1,27 @@
 use safepath_core::{
     executor, history, ExecutePlanRequest, ExecutionCompletedEvent, ExecutionProgressEvent,
-    ExecutionSessionDto, PlanDto, UndoRecordRequest, UndoSessionRequest, WorkflowPhase,
+    ExecutionSessionDto, ExecutionSessionStatus, ManifestEntryDto, PlanDto, PreflightIssueDto,
+    PreflightIssueSeverity, ReviewState, UndoRecordRequest, UndoSessionRequest, WorkflowPhase,
 };
+use std::collections::HashMap;
+use std::fs;
 use std::thread;
+use std::time::UNIX_EPOCH;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::AppState;
+
+#[tauri::command]
+pub fn get_execution_preflight(
+    state: State<'_, AppState>,
+    plan_id: String,
+) -> Result<Vec<PreflightIssueDto>, String> {
+    let plan = state
+        .store
+        .get_plan(&plan_id)?
+        .ok_or_else(|| format!("Plan `{plan_id}` was not found."))?;
+    collect_execution_preflight_issues(state.inner(), &plan)
+}
 
 #[tauri::command]
 pub fn execute_plan(
@@ -24,7 +40,9 @@ pub fn execute_plan(
         .store
         .get_plan(&request.plan_id)?
         .ok_or_else(|| format!("Plan `{}` was not found.", request.plan_id))?;
-    let session = executor::initialize_execution_session(&plan);
+    let preflight_issues = collect_execution_preflight_issues(&app_state, &plan)?;
+    let mut session = executor::initialize_execution_session(&plan);
+    apply_preflight_issues(&mut session, preflight_issues);
     app_state.store.save_execution_session(&session)?;
 
     if session.status == safepath_core::ExecutionSessionStatus::Failed {
@@ -216,4 +234,97 @@ fn guard_execution_phase(state: &State<'_, AppState>) -> Result<(), String> {
         return Err("An execution or undo session is already running.".to_string());
     }
     Ok(())
+}
+
+fn collect_execution_preflight_issues(
+    state: &AppState,
+    plan: &PlanDto,
+) -> Result<Vec<PreflightIssueDto>, String> {
+    let mut issues = executor::preflight_plan(plan);
+    issues.extend(drift_preflight_warnings(state, plan)?);
+    Ok(issues)
+}
+
+fn drift_preflight_warnings(
+    state: &AppState,
+    plan: &PlanDto,
+) -> Result<Vec<PreflightIssueDto>, String> {
+    let entry_lookup = state
+        .store
+        .get_manifest_entries(&plan.job_id)?
+        .into_iter()
+        .map(|entry| (entry.entry_id.clone(), entry))
+        .collect::<HashMap<String, ManifestEntryDto>>();
+    let mut issues = Vec::new();
+
+    for action in plan
+        .actions
+        .iter()
+        .filter(|action| action.review_state == ReviewState::Approved)
+    {
+        let Some(entry) = entry_lookup.get(&action.source_entry_id) else {
+            continue;
+        };
+
+        let Ok(metadata) = fs::metadata(&action.source_path) else {
+            continue;
+        };
+
+        let mut drift_reasons = Vec::new();
+        if metadata.len() != entry.size_bytes {
+            drift_reasons.push(format!(
+                "size changed from {} bytes to {} bytes",
+                entry.size_bytes,
+                metadata.len()
+            ));
+        }
+
+        let current_modified_at = metadata.modified().ok().and_then(system_time_to_epoch_ms);
+        if let (Some(recorded_modified_at), Some(current_modified_at)) =
+            (entry.modified_at_epoch_ms, current_modified_at)
+        {
+            if recorded_modified_at.abs_diff(current_modified_at) > 1_000 {
+                drift_reasons.push("modified time changed".to_string());
+            }
+        }
+
+        if drift_reasons.is_empty() {
+            continue;
+        }
+
+        issues.push(PreflightIssueDto {
+            action_id: Some(action.action_id.clone()),
+            severity: PreflightIssueSeverity::Warning,
+            message: format!(
+                "Source path `{}` changed since the last scan ({}). Review the action or rebuild the plan before executing if the change matters.",
+                action.source_path,
+                drift_reasons.join(", ")
+            ),
+        });
+    }
+
+    Ok(issues)
+}
+
+fn apply_preflight_issues(
+    session: &mut ExecutionSessionDto,
+    preflight_issues: Vec<PreflightIssueDto>,
+) {
+    session.preflight_issues = preflight_issues;
+    let has_errors = session
+        .preflight_issues
+        .iter()
+        .any(|issue| issue.severity == PreflightIssueSeverity::Error);
+    if has_errors {
+        session.status = ExecutionSessionStatus::Failed;
+        session.finished_at_epoch_ms = Some(session.started_at_epoch_ms);
+    } else {
+        session.status = ExecutionSessionStatus::Running;
+        session.finished_at_epoch_ms = None;
+    }
+}
+
+fn system_time_to_epoch_ms(time: std::time::SystemTime) -> Option<i64> {
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+    Some(duration.as_millis() as i64)
 }

@@ -7,6 +7,9 @@ use crate::types::{
 pub fn built_in_presets() -> Vec<PresetDefinitionDto> {
     vec![
         general_organize_preset(),
+        downloads_cleanup_preset(),
+        screenshots_preset(),
+        camera_import_preset(),
         project_safe_preset(),
         duplicate_review_preset(),
     ]
@@ -159,6 +162,202 @@ fn project_safe_preset() -> PresetDefinitionDto {
     }
 }
 
+fn downloads_cleanup_preset() -> PresetDefinitionDto {
+    PresetDefinitionDto {
+        preset_id: "downloads_cleanup".to_string(),
+        name: "Downloads Cleanup".to_string(),
+        description:
+            "Sort mixed download folders by type while leaving risky leftovers in review. Best for disposable inboxes, not project roots."
+                .to_string(),
+        rule_set: RuleSetDto {
+            rule_set_id: "downloads_cleanup_rules".to_string(),
+            name: "Downloads cleanup".to_string(),
+            rules: vec![
+                extension_move_rule(
+                    "installers",
+                    "Installers",
+                    110,
+                    &["app", "pkg", "dmg", "msi", "exe"],
+                    "Installers",
+                    "Route installer packages into Installers.",
+                ),
+                category_rule(
+                    "downloads_archives",
+                    "Archives",
+                    100,
+                    FileCategory::Archive,
+                    "Archives",
+                    "Route compressed downloads into Archives.",
+                ),
+                category_rule(
+                    "downloads_documents",
+                    "Documents",
+                    90,
+                    FileCategory::Document,
+                    "Documents/{file_year}",
+                    "Route downloaded documents into yearly folders.",
+                ),
+                category_rule(
+                    "downloads_images",
+                    "Images",
+                    80,
+                    FileCategory::Image,
+                    "Images/{file_year}/{file_month}",
+                    "Route downloaded images into dated folders.",
+                ),
+                category_rule(
+                    "downloads_videos",
+                    "Videos",
+                    70,
+                    FileCategory::Video,
+                    "Videos/{file_year}/{file_month}",
+                    "Route downloaded videos into dated folders.",
+                ),
+                category_rule(
+                    "downloads_audio",
+                    "Audio",
+                    60,
+                    FileCategory::Audio,
+                    "Audio",
+                    "Route downloaded audio into Audio.",
+                ),
+                review_rule(
+                    "downloads_review_leftovers",
+                    "Review leftovers",
+                    40,
+                    any_of(vec![
+                        RuleConditionDto::FileCategory {
+                            category: FileCategory::Code,
+                        },
+                        RuleConditionDto::FileCategory {
+                            category: FileCategory::Unknown,
+                        },
+                        RuleConditionDto::NoExtension,
+                    ]),
+                    "Leave risky leftovers in review instead of moving them automatically.",
+                ),
+            ],
+        },
+        plan_options: PlanOptionsDto {
+            checksum_mode: ChecksumMode::Off,
+            duplicate_policy: DuplicatePolicy::FlagOnly,
+            review_mode: ReviewMode::Strict,
+            project_safety_mode: ProjectSafetyMode::On,
+            fallback_behavior: FallbackBehavior::Skip,
+        },
+    }
+}
+
+fn screenshots_preset() -> PresetDefinitionDto {
+    PresetDefinitionDto {
+        preset_id: "screenshots_cleanup".to_string(),
+        name: "Screenshots Cleanup".to_string(),
+        description:
+            "Gather screenshot-style image files into dated screenshot folders. Best for screenshot-heavy inboxes, not full photo libraries."
+                .to_string(),
+        rule_set: RuleSetDto {
+            rule_set_id: "screenshots_cleanup_rules".to_string(),
+            name: "Screenshots cleanup".to_string(),
+            rules: vec![RuleDto {
+                rule_id: "screenshots".to_string(),
+                name: "Screenshot images".to_string(),
+                priority: 100,
+                conditions: vec![all_of(vec![
+                    RuleConditionDto::FileCategory {
+                        category: FileCategory::Image,
+                    },
+                    any_of(vec![
+                        RuleConditionDto::FilenameContains {
+                            value: "screenshot".to_string(),
+                        },
+                        RuleConditionDto::FilenameContains {
+                            value: "screen shot".to_string(),
+                        },
+                        RuleConditionDto::FilenameContains {
+                            value: "screen_shot".to_string(),
+                        },
+                        RuleConditionDto::FilenameContains {
+                            value: "screencapture".to_string(),
+                        },
+                        RuleConditionDto::FilenameContains {
+                            value: "snip".to_string(),
+                        },
+                    ]),
+                ])],
+                action_kind: PlannedActionKind::Move,
+                destination_template: Some("Screenshots/{file_year}/{file_month}".to_string()),
+                explanation: "Gather screenshot-style image files into dated folders.".to_string(),
+            }],
+        },
+        plan_options: PlanOptionsDto {
+            checksum_mode: ChecksumMode::Off,
+            duplicate_policy: DuplicatePolicy::Informational,
+            review_mode: ReviewMode::Standard,
+            project_safety_mode: ProjectSafetyMode::On,
+            fallback_behavior: FallbackBehavior::Skip,
+        },
+    }
+}
+
+fn camera_import_preset() -> PresetDefinitionDto {
+    PresetDefinitionDto {
+        preset_id: "camera_import".to_string(),
+        name: "Camera Import".to_string(),
+        description:
+            "Sort photo and video imports into dated folders using filesystem timestamps. Best when modified times roughly match capture order; not EXIF-accurate yet."
+                .to_string(),
+        rule_set: RuleSetDto {
+            rule_set_id: "camera_import_rules".to_string(),
+            name: "Camera import".to_string(),
+            rules: vec![
+                extension_move_rule(
+                    "raw_images",
+                    "RAW photos",
+                    110,
+                    &["dng", "arw", "cr2", "cr3", "nef", "orf", "raf", "rw2"],
+                    "Photos/{file_year}/{file_month}/RAW",
+                    "Route common RAW photo formats into dated RAW folders.",
+                ),
+                category_rule(
+                    "camera_images",
+                    "Photos",
+                    100,
+                    FileCategory::Image,
+                    "Photos/{file_year}/{file_month}",
+                    "Route photo imports into dated folders.",
+                ),
+                category_rule(
+                    "camera_videos",
+                    "Videos",
+                    90,
+                    FileCategory::Video,
+                    "Videos/{file_year}/{file_month}",
+                    "Route video imports into dated folders.",
+                ),
+                review_rule(
+                    "camera_unknown_review",
+                    "Review unknown leftovers",
+                    40,
+                    any_of(vec![
+                        RuleConditionDto::FileCategory {
+                            category: FileCategory::Unknown,
+                        },
+                        RuleConditionDto::NoExtension,
+                    ]),
+                    "Leave unknown leftovers in review before moving them out of an import batch.",
+                ),
+            ],
+        },
+        plan_options: PlanOptionsDto {
+            checksum_mode: ChecksumMode::Off,
+            duplicate_policy: DuplicatePolicy::FlagOnly,
+            review_mode: ReviewMode::Standard,
+            project_safety_mode: ProjectSafetyMode::On,
+            fallback_behavior: FallbackBehavior::Skip,
+        },
+    }
+}
+
 fn duplicate_review_preset() -> PresetDefinitionDto {
     PresetDefinitionDto {
         preset_id: "duplicate_review".to_string(),
@@ -205,4 +404,51 @@ fn category_rule(
         destination_template: Some(destination_template.to_string()),
         explanation: explanation.to_string(),
     }
+}
+
+fn extension_move_rule(
+    rule_id: &str,
+    name: &str,
+    priority: i32,
+    extensions: &[&str],
+    destination_template: &str,
+    explanation: &str,
+) -> RuleDto {
+    RuleDto {
+        rule_id: rule_id.to_string(),
+        name: name.to_string(),
+        priority,
+        conditions: vec![RuleConditionDto::ExtensionIn {
+            extensions: extensions.iter().map(|value| value.to_string()).collect(),
+        }],
+        action_kind: PlannedActionKind::Move,
+        destination_template: Some(destination_template.to_string()),
+        explanation: explanation.to_string(),
+    }
+}
+
+fn review_rule(
+    rule_id: &str,
+    name: &str,
+    priority: i32,
+    condition: RuleConditionDto,
+    explanation: &str,
+) -> RuleDto {
+    RuleDto {
+        rule_id: rule_id.to_string(),
+        name: name.to_string(),
+        priority,
+        conditions: vec![condition],
+        action_kind: PlannedActionKind::Review,
+        destination_template: None,
+        explanation: explanation.to_string(),
+    }
+}
+
+fn any_of(conditions: Vec<RuleConditionDto>) -> RuleConditionDto {
+    RuleConditionDto::AnyOf { conditions }
+}
+
+fn all_of(conditions: Vec<RuleConditionDto>) -> RuleConditionDto {
+    RuleConditionDto::AllOf { conditions }
 }
