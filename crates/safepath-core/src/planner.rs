@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use uuid::Uuid;
 
 use crate::analyzer::classify_entry;
-use crate::pathing::{join_path, path_is_within};
+use crate::pathing::{disambiguated_filename, join_path, normalize_display_path, path_is_within};
 use crate::rules::{describe_conditions, rule_matches};
 use crate::templates::render_destination_template;
 use crate::types::{
@@ -168,6 +168,7 @@ fn apply_rules(
                             destination_root,
                             &rendered.relative_path,
                             &entry.name,
+                            rendered.controls_filename,
                         )),
                         Some(rendered.relative_path),
                         None,
@@ -385,7 +386,7 @@ fn needs_choice_action(
 }
 
 fn resolve_destination_conflicts(actions: &mut [PlannedActionDto]) {
-    let mut destination_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut destination_groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, action) in actions.iter().enumerate() {
         if action.action_kind == PlannedActionKind::Move {
             if let Some(destination_path) = &action.destination_path {
@@ -397,24 +398,65 @@ fn resolve_destination_conflicts(actions: &mut [PlannedActionDto]) {
         }
     }
 
+    let mut reserved_paths = HashSet::new();
     for (destination_path, indexes) in destination_groups {
-        let conflict_reason = if indexes
+        let source_matches_destination = indexes
             .iter()
-            .any(|index| actions[*index].source_path == destination_path)
-        {
-            Some("The planned destination matches the current source path.".to_string())
-        } else if indexes.len() > 1 {
-            Some("Multiple planned actions target the same destination path.".to_string())
-        } else if Path::new(&destination_path).exists() {
-            Some("A file already exists at the planned destination path.".to_string())
-        } else {
-            None
-        };
-
-        if let Some(reason) = conflict_reason {
+            .any(|index| actions[*index].source_path == destination_path);
+        if source_matches_destination {
             for index in indexes {
-                mark_destination_conflict(&mut actions[index], &destination_path, &reason);
+                mark_destination_conflict(
+                    &mut actions[index],
+                    &destination_path,
+                    "The planned destination matches the current source path.",
+                );
             }
+            continue;
+        }
+
+        let existing_destination =
+            Path::new(&destination_path).exists() || reserved_paths.contains(&destination_path);
+        let has_multi_action_conflict = indexes.len() > 1;
+        let collision_sensitive = existing_destination || has_multi_action_conflict;
+
+        if collision_sensitive
+            && !indexes
+                .iter()
+                .all(|index| supports_collision_safe_name(&actions[*index]))
+        {
+            let reason = if has_multi_action_conflict {
+                "Multiple planned actions target the same destination path."
+            } else {
+                "A file already exists at the planned destination path."
+            };
+            for index in indexes {
+                mark_destination_conflict(&mut actions[index], &destination_path, reason);
+            }
+            continue;
+        }
+
+        let mut sorted_indexes = indexes;
+        sorted_indexes.sort_by(|left, right| {
+            actions[*left]
+                .source_path
+                .cmp(&actions[*right].source_path)
+                .then_with(|| actions[*left].action_id.cmp(&actions[*right].action_id))
+        });
+
+        for (position, index) in sorted_indexes.into_iter().enumerate() {
+            let keep_original_destination = position == 0
+                && !existing_destination
+                && !reserved_paths.contains(&destination_path);
+            let final_destination = if keep_original_destination {
+                destination_path.clone()
+            } else {
+                next_collision_safe_destination(&actions[index], &destination_path, &reserved_paths)
+            };
+
+            if final_destination != destination_path {
+                retarget_collision_safe_destination(&mut actions[index], &final_destination);
+            }
+            reserved_paths.insert(final_destination);
         }
     }
 }
@@ -556,8 +598,72 @@ fn protection_rank(state: ProtectionState) -> u8 {
     }
 }
 
-fn join_destination(root: &str, rendered_template: &str, filename: &str) -> String {
-    join_path(root, rendered_template, filename)
+fn join_destination(
+    root: &str,
+    rendered_template: &str,
+    filename: &str,
+    controls_filename: bool,
+) -> String {
+    if controls_filename {
+        join_path(root, rendered_template, "")
+    } else {
+        join_path(root, rendered_template, filename)
+    }
+}
+
+fn supports_collision_safe_name(action: &PlannedActionDto) -> bool {
+    action
+        .explanation
+        .template_used
+        .as_deref()
+        .is_some_and(|template| template.contains("{collision_name}"))
+}
+
+fn next_collision_safe_destination(
+    action: &PlannedActionDto,
+    destination_path: &str,
+    reserved_paths: &HashSet<String>,
+) -> String {
+    let destination = Path::new(destination_path);
+    let parent = destination.parent().unwrap_or_else(|| Path::new(""));
+    let parent_display = normalize_display_path(parent);
+    let mut counter = 2_u32;
+
+    loop {
+        let candidate = join_path(
+            &parent_display,
+            "",
+            &disambiguated_filename(&action.source_path, &format!("{counter:02}")),
+        );
+        if candidate != action.source_path
+            && !reserved_paths.contains(&candidate)
+            && !Path::new(&candidate).exists()
+        {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+fn retarget_collision_safe_destination(action: &mut PlannedActionDto, destination_path: &str) {
+    action.destination_path = Some(destination_path.to_string());
+    if let Some(destination_root) = &action.explanation.destination_root {
+        action.explanation.previewed_template_output = Some(relative_destination_path(
+            destination_root,
+            destination_path,
+        ));
+    }
+    action.explanation.notes.push(
+        "Collision-safe naming added a numeric suffix to avoid a destination basename clash."
+            .to_string(),
+    );
+}
+
+fn relative_destination_path(destination_root: &str, destination_path: &str) -> String {
+    Path::new(destination_path)
+        .strip_prefix(destination_root)
+        .map(normalize_display_path)
+        .unwrap_or_else(|_| normalize_display_path(destination_path))
 }
 
 #[cfg(test)]
@@ -853,6 +959,72 @@ mod tests {
         let _ = fs::remove_dir_all(temp_dir);
     }
 
+    #[test]
+    fn camera_import_prefers_media_date_tokens_when_available() {
+        let preset = get_preset("camera_import").expect("preset");
+        let mut entry = manifest_entry(
+            "image-media-date",
+            "/source/photo.jpg",
+            "photo.jpg",
+            Some("jpg"),
+            1_704_067_200_000,
+        );
+        entry.media_date_epoch_ms = Some(1_709_337_600_000);
+
+        let plan = build_plan(
+            "job-7",
+            &[entry],
+            &empty_analysis("job-7"),
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan");
+
+        assert_eq!(
+            plan.actions[0].destination_path.as_deref(),
+            Some("/dest/Photos/2024/03/photo.jpg")
+        );
+    }
+
+    #[test]
+    fn camera_import_disambiguates_same_named_files_with_collision_safe_template() {
+        let preset = get_preset("camera_import").expect("preset");
+        let entries = vec![
+            manifest_entry(
+                "image-collision-1",
+                "/source/a/photo.jpg",
+                "photo.jpg",
+                Some("jpg"),
+                1_704_067_200_000,
+            ),
+            manifest_entry(
+                "image-collision-2",
+                "/source/b/photo.jpg",
+                "photo.jpg",
+                Some("jpg"),
+                1_704_067_200_000,
+            ),
+        ];
+
+        let plan = build_plan(
+            "job-8",
+            &entries,
+            &empty_analysis("job-8"),
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan");
+
+        assert_eq!(plan.summary.blocked_actions, 0);
+        let destinations = plan
+            .actions
+            .iter()
+            .map(|action| action.destination_path.clone().expect("destination"))
+            .collect::<Vec<_>>();
+        assert!(destinations.contains(&"/dest/Photos/2024/01/photo.jpg".to_string()));
+        assert!(destinations.contains(&"/dest/Photos/2024/01/photo--02.jpg".to_string()));
+    }
+
     fn empty_analysis(job_id: &str) -> AnalysisSummaryDto {
         AnalysisSummaryDto {
             job_id: job_id.to_string(),
@@ -890,6 +1062,8 @@ mod tests {
             is_hidden: false,
             created_at_epoch_ms: Some(modified_at_epoch_ms),
             modified_at_epoch_ms: Some(modified_at_epoch_ms),
+            media_date_epoch_ms: None,
+            media_date_source: None,
         }
     }
 

@@ -52,6 +52,7 @@ export interface AppStatusDto {
 
 export type ScanJobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type ManifestEntryKind = 'file' | 'directory'
+export type MediaDateSource = 'embeddedMetadata' | 'filesystemCreated' | 'filesystemModified'
 
 export interface StartScanRequest {
   sourcePaths: string[]
@@ -127,6 +128,8 @@ export interface ManifestEntryDto {
   isHidden: boolean
   createdAtEpochMs: number | null
   modifiedAtEpochMs: number | null
+  mediaDateEpochMs: number | null
+  mediaDateSource: MediaDateSource | null
 }
 
 export interface ManifestPageDto {
@@ -571,6 +574,8 @@ export interface DuplicateReviewMemberDto {
   sizeBytes: number
   createdAtEpochMs: number | null
   modifiedAtEpochMs: number | null
+  mediaDateEpochMs: number | null
+  mediaDateSource: MediaDateSource | null
   reviewState: ReviewState | null
   isSelectedKeeper: boolean
   isRecommendedKeeper: boolean

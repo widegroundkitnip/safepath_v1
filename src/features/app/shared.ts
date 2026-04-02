@@ -1,4 +1,10 @@
-import type { LearnerObservationDto, PlanDto, PlannedActionDto, SyntheticDatasetCategory } from '../../types/app'
+import type {
+  LearnerObservationDto,
+  MediaDateSource,
+  PlanDto,
+  PlannedActionDto,
+  SyntheticDatasetCategory,
+} from '../../types/app'
 
 export function parsePaths(value: string) {
   return value
@@ -13,6 +19,19 @@ export function formatTimestamp(epochMs: number | null) {
   }
 
   return new Date(epochMs).toLocaleString()
+}
+
+export function formatMediaDateSource(source: MediaDateSource | null) {
+  switch (source) {
+    case 'embeddedMetadata':
+      return 'Embedded metadata'
+    case 'filesystemCreated':
+      return 'Filesystem created time'
+    case 'filesystemModified':
+      return 'Filesystem modified time'
+    default:
+      return 'Not recorded'
+  }
 }
 
 export function formatBytes(bytes: number) {

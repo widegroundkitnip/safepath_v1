@@ -7,7 +7,7 @@ use crate::util::{action_record_status_code, execution_operation_kind_code};
 
 use super::Store;
 
-const LATEST_SCHEMA_VERSION: i32 = 3;
+const LATEST_SCHEMA_VERSION: i32 = 4;
 
 pub(crate) fn initialize_schema(store: &Store) -> Result<(), String> {
     if let Some(parent) = store.db_path.parent() {
@@ -46,6 +46,11 @@ pub(crate) fn initialize_schema(store: &Store) -> Result<(), String> {
     if current_version < 3 {
         migrate_v2_to_v3(&connection)?;
         current_version = 3;
+    }
+
+    if current_version < 4 {
+        migrate_v3_to_v4(&connection)?;
+        current_version = 4;
     }
 
     create_latest_schema(&connection)?;
@@ -87,7 +92,9 @@ fn create_latest_schema(connection: &Connection) -> Result<(), String> {
                 extension TEXT,
                 is_hidden INTEGER NOT NULL DEFAULT 0,
                 created_at_epoch_ms INTEGER,
-                modified_at_epoch_ms INTEGER
+                modified_at_epoch_ms INTEGER,
+                media_date_epoch_ms INTEGER,
+                media_date_source TEXT
             );
 
             CREATE TABLE IF NOT EXISTS analysis_results (
@@ -203,6 +210,46 @@ fn migrate_v2_to_v3(connection: &Connection) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn migrate_v3_to_v4(connection: &Connection) -> Result<(), String> {
+    if !table_exists(connection, "manifest_entries")? {
+        return Ok(());
+    }
+
+    add_column_if_missing(
+        connection,
+        "manifest_entries",
+        "media_date_epoch_ms",
+        "INTEGER",
+    )?;
+    add_column_if_missing(connection, "manifest_entries", "media_date_source", "TEXT")?;
+
+    connection
+        .execute_batch(
+            "
+            UPDATE manifest_entries
+            SET media_date_epoch_ms = created_at_epoch_ms,
+                media_date_source = '\"filesystemCreated\"'
+            WHERE media_date_epoch_ms IS NULL
+              AND created_at_epoch_ms IS NOT NULL
+              AND lower(coalesce(extension, '')) IN (
+                'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'tif', 'tiff', 'bmp', 'svg',
+                'mov', 'mp4', 'm4v', 'mxf', 'avi', 'mkv', 'webm'
+              );
+
+            UPDATE manifest_entries
+            SET media_date_epoch_ms = modified_at_epoch_ms,
+                media_date_source = '\"filesystemModified\"'
+            WHERE media_date_epoch_ms IS NULL
+              AND modified_at_epoch_ms IS NOT NULL
+              AND lower(coalesce(extension, '')) IN (
+                'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'tif', 'tiff', 'bmp', 'svg',
+                'mov', 'mp4', 'm4v', 'mxf', 'avi', 'mkv', 'webm'
+              );
+            ",
+        )
+        .map_err(|error| error.to_string())
+}
+
 fn backfill_action_record_metadata(connection: &Connection) -> Result<(), String> {
     let mut statement = connection
         .prepare("SELECT record_id, payload_json FROM action_records")
@@ -268,6 +315,17 @@ fn count_user_tables(connection: &Connection) -> Result<i64, String> {
             [],
             |row| row.get::<_, i64>(0),
         )
+        .map_err(|error| error.to_string())
+}
+
+fn table_exists(connection: &Connection, table_name: &str) -> Result<bool, String> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+            params![table_name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists != 0)
         .map_err(|error| error.to_string())
 }
 

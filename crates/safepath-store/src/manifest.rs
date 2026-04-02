@@ -14,12 +14,18 @@ impl Store {
     ) -> Result<u64, String> {
         let connection = self.connection()?;
         let entry_id = Uuid::new_v4().to_string();
+        let media_date_source_json = entry
+            .media_date_source
+            .map(|value| serde_json::to_string(&value))
+            .transpose()
+            .map_err(|error| error.to_string())?;
         connection
             .execute(
                 "INSERT INTO manifest_entries (
                     entry_id, job_id, source_root, path, relative_path, name, entry_kind,
-                    size_bytes, extension, is_hidden, created_at_epoch_ms, modified_at_epoch_ms
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    size_bytes, extension, is_hidden, created_at_epoch_ms, modified_at_epoch_ms,
+                    media_date_epoch_ms, media_date_source
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     entry_id,
                     job_id,
@@ -33,6 +39,8 @@ impl Store {
                     entry.is_hidden as i64,
                     entry.created_at_epoch_ms,
                     entry.modified_at_epoch_ms,
+                    entry.media_date_epoch_ms,
+                    media_date_source_json,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -110,7 +118,8 @@ impl Store {
         let sql = if limit.is_some() && offset.is_some() {
             "SELECT
                 entry_id, job_id, source_root, path, relative_path, name, entry_kind,
-                size_bytes, extension, is_hidden, created_at_epoch_ms, modified_at_epoch_ms
+                size_bytes, extension, is_hidden, created_at_epoch_ms, modified_at_epoch_ms,
+                media_date_epoch_ms, media_date_source
              FROM manifest_entries
              WHERE job_id = ?1
              ORDER BY path ASC
@@ -118,7 +127,8 @@ impl Store {
         } else {
             "SELECT
                 entry_id, job_id, source_root, path, relative_path, name, entry_kind,
-                size_bytes, extension, is_hidden, created_at_epoch_ms, modified_at_epoch_ms
+                size_bytes, extension, is_hidden, created_at_epoch_ms, modified_at_epoch_ms,
+                media_date_epoch_ms, media_date_source
              FROM manifest_entries
              WHERE job_id = ?1
              ORDER BY path ASC"
@@ -153,5 +163,17 @@ fn map_manifest_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<ManifestEntry
         is_hidden: row.get::<_, i64>(9)? != 0,
         created_at_epoch_ms: row.get(10)?,
         modified_at_epoch_ms: row.get(11)?,
+        media_date_epoch_ms: row.get(12)?,
+        media_date_source: row
+            .get::<_, Option<String>>(13)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    13,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
     })
 }

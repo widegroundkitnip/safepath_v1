@@ -35,7 +35,7 @@ fn general_organize_preset() -> PresetDefinitionDto {
                     "Images by date",
                     100,
                     FileCategory::Image,
-                    "Images/{file_year}/{file_month}",
+                    "Images/{fallback:media_year,file_year}/{fallback:media_month,file_month}",
                     "Route images into dated folders.",
                 ),
                 category_rule(
@@ -43,7 +43,7 @@ fn general_organize_preset() -> PresetDefinitionDto {
                     "Videos by date",
                     90,
                     FileCategory::Video,
-                    "Videos/{file_year}/{file_month}",
+                    "Videos/{fallback:media_year,file_year}/{fallback:media_month,file_month}",
                     "Route videos into dated folders.",
                 ),
                 category_rule(
@@ -131,7 +131,7 @@ fn project_safe_preset() -> PresetDefinitionDto {
                     "Loose images",
                     70,
                     FileCategory::Image,
-                    "Images/{file_year}/{file_month}",
+                    "Images/{fallback:media_year,file_year}/{fallback:media_month,file_month}",
                     "Route loose images conservatively.",
                 ),
                 RuleDto {
@@ -202,7 +202,7 @@ fn downloads_cleanup_preset() -> PresetDefinitionDto {
                     "Images",
                     80,
                     FileCategory::Image,
-                    "Images/{file_year}/{file_month}",
+                    "Images/{fallback:media_year,file_year}/{fallback:media_month,file_month}",
                     "Route downloaded images into dated folders.",
                 ),
                 category_rule(
@@ -210,7 +210,7 @@ fn downloads_cleanup_preset() -> PresetDefinitionDto {
                     "Videos",
                     70,
                     FileCategory::Video,
-                    "Videos/{file_year}/{file_month}",
+                    "Videos/{fallback:media_year,file_year}/{fallback:media_month,file_month}",
                     "Route downloaded videos into dated folders.",
                 ),
                 category_rule(
@@ -253,7 +253,7 @@ fn screenshots_preset() -> PresetDefinitionDto {
         preset_id: "screenshots_cleanup".to_string(),
         name: "Screenshots Cleanup".to_string(),
         description:
-            "Gather screenshot-style image files into dated screenshot folders. Best for screenshot-heavy inboxes, not full photo libraries."
+            "Gather screenshot-style image files into dated screenshot folders with collision-safe naming when the same basename appears more than once. Best for screenshot-heavy inboxes, not full photo libraries."
                 .to_string(),
         rule_set: RuleSetDto {
             rule_set_id: "screenshots_cleanup_rules".to_string(),
@@ -285,7 +285,9 @@ fn screenshots_preset() -> PresetDefinitionDto {
                     ]),
                 ])],
                 action_kind: PlannedActionKind::Move,
-                destination_template: Some("Screenshots/{file_year}/{file_month}".to_string()),
+                destination_template: Some(
+                    "Screenshots/{fallback:media_year,file_year}/{fallback:media_month,file_month}/{collision_name}".to_string(),
+                ),
                 explanation: "Gather screenshot-style image files into dated folders.".to_string(),
             }],
         },
@@ -304,7 +306,7 @@ fn camera_import_preset() -> PresetDefinitionDto {
         preset_id: "camera_import".to_string(),
         name: "Camera Import".to_string(),
         description:
-            "Sort photo and video imports into dated folders using filesystem timestamps. Best when modified times roughly match capture order; not EXIF-accurate yet."
+            "Sort photo and video imports into dated folders using media dates when available, then filesystem fallbacks, with collision-safe naming for same-basename imports."
                 .to_string(),
         rule_set: RuleSetDto {
             rule_set_id: "camera_import_rules".to_string(),
@@ -315,7 +317,7 @@ fn camera_import_preset() -> PresetDefinitionDto {
                     "RAW photos",
                     110,
                     &["dng", "arw", "cr2", "cr3", "nef", "orf", "raf", "rw2"],
-                    "Photos/{file_year}/{file_month}/RAW",
+                    "Photos/{fallback:media_year,file_year}/{fallback:media_month,file_month}/RAW/{collision_name}",
                     "Route common RAW photo formats into dated RAW folders.",
                 ),
                 category_rule(
@@ -323,7 +325,7 @@ fn camera_import_preset() -> PresetDefinitionDto {
                     "Photos",
                     100,
                     FileCategory::Image,
-                    "Photos/{file_year}/{file_month}",
+                    "Photos/{fallback:media_year,file_year}/{fallback:media_month,file_month}/{collision_name}",
                     "Route photo imports into dated folders.",
                 ),
                 category_rule(
@@ -331,7 +333,7 @@ fn camera_import_preset() -> PresetDefinitionDto {
                     "Videos",
                     90,
                     FileCategory::Video,
-                    "Videos/{file_year}/{file_month}",
+                    "Videos/{fallback:media_year,file_year}/{fallback:media_month,file_month}/{collision_name}",
                     "Route video imports into dated folders.",
                 ),
                 review_rule(

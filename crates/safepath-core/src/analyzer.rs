@@ -696,6 +696,8 @@ mod tests {
             is_hidden: name.starts_with('.'),
             created_at_epoch_ms: None,
             modified_at_epoch_ms: None,
+            media_date_epoch_ms: None,
+            media_date_source: None,
         }
     }
 

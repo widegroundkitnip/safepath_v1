@@ -79,6 +79,7 @@ import {
   type DestinationFolderPreview,
   formatBytes,
   formatExecutionStrategy,
+  formatMediaDateSource,
   formatTimestamp,
   HISTORY_PAGE_SIZE,
   HISTORY_SESSION_RECORD_PAGE_SIZE,
@@ -1955,11 +1956,19 @@ function App() {
                       <p>Blocked reason: {selectedAction.explanation.blockedReason}</p>
                     ) : null}
                     {selectedAction.explanation.templateUsed ? (
+                      <>
+                        <p>Template: {selectedAction.explanation.templateUsed}</p>
+                        {selectedAction.explanation.previewedTemplateOutput ? (
+                          <p>
+                            Rendered path: {selectedAction.explanation.previewedTemplateOutput}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {selectedAction.explanation.templateError ? (
                       <p>
-                        Template: {selectedAction.explanation.templateUsed}
-                        {selectedAction.explanation.previewedTemplateOutput
-                          ? ` -> ${selectedAction.explanation.previewedTemplateOutput}`
-                          : ''}
+                        Template error: {selectedAction.explanation.templateError}. Unknown or invalid
+                        tokens stay blocked until the plan is rebuilt with a valid preset.
                       </p>
                     ) : null}
                     {selectedAction.explanation.matchedConditions.length > 0 ? (
@@ -2211,6 +2220,12 @@ function App() {
                                   {formatTimestamp(member.modifiedAtEpochMs)} | Created{' '}
                                   {formatTimestamp(member.createdAtEpochMs)}
                                 </p>
+                                {member.mediaDateSource ? (
+                                  <p>
+                                    Media date {formatTimestamp(member.mediaDateEpochMs)} from{' '}
+                                    {formatMediaDateSource(member.mediaDateSource)}
+                                  </p>
+                                ) : null}
                                 <p>
                                   Review state: {member.reviewState ?? 'not tracked'}
                                   {member.isRecommendedKeeper ? ' | suggested keeper' : ''}
@@ -2330,6 +2345,12 @@ function App() {
                         <div>
                           <strong>{entry.name}</strong>
                           <p>{entry.relativePath}</p>
+                          {entry.mediaDateSource ? (
+                            <p>
+                              Media date {formatTimestamp(entry.mediaDateEpochMs)} from{' '}
+                              {formatMediaDateSource(entry.mediaDateSource)}
+                            </p>
+                          ) : null}
                         </div>
                         <span>{entry.entryKind}</span>
                       </li>

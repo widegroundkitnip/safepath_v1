@@ -100,6 +100,8 @@ pub fn get_duplicate_review_group_details(
                 size_bytes: entry.size_bytes,
                 created_at_epoch_ms: entry.created_at_epoch_ms,
                 modified_at_epoch_ms: entry.modified_at_epoch_ms,
+                media_date_epoch_ms: entry.media_date_epoch_ms,
+                media_date_source: entry.media_date_source,
                 review_state: action.map(|item| item.review_state),
                 is_selected_keeper: group.selected_keeper_entry_id.as_ref()
                     == Some(&entry.entry_id),

@@ -122,6 +122,8 @@ mod tests {
             is_hidden: false,
             created_at_epoch_ms: None,
             modified_at_epoch_ms: None,
+            media_date_epoch_ms: None,
+            media_date_source: None,
         };
 
         let conditions = vec![RuleConditionDto::AllOf {

@@ -352,6 +352,8 @@ pub struct ManifestEntryDto {
     pub is_hidden: bool,
     pub created_at_epoch_ms: Option<i64>,
     pub modified_at_epoch_ms: Option<i64>,
+    pub media_date_epoch_ms: Option<i64>,
+    pub media_date_source: Option<MediaDateSource>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -359,6 +361,14 @@ pub struct ManifestEntryDto {
 pub enum ManifestEntryKind {
     File,
     Directory,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaDateSource {
+    EmbeddedMetadata,
+    FilesystemCreated,
+    FilesystemModified,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -563,6 +573,8 @@ pub struct DuplicateReviewMemberDto {
     pub size_bytes: u64,
     pub created_at_epoch_ms: Option<i64>,
     pub modified_at_epoch_ms: Option<i64>,
+    pub media_date_epoch_ms: Option<i64>,
+    pub media_date_source: Option<MediaDateSource>,
     pub review_state: Option<ReviewState>,
     pub is_selected_keeper: bool,
     pub is_recommended_keeper: bool,
@@ -966,4 +978,6 @@ pub struct ScannedEntryRecord {
     pub is_hidden: bool,
     pub created_at_epoch_ms: Option<i64>,
     pub modified_at_epoch_ms: Option<i64>,
+    pub media_date_epoch_ms: Option<i64>,
+    pub media_date_source: Option<MediaDateSource>,
 }

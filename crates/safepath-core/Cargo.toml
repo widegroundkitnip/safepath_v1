@@ -7,6 +7,8 @@ authors.workspace = true
 
 [dependencies]
 blake3.workspace = true
+chrono = "0.4.44"
+kamadak-exif = "0.6.1"
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

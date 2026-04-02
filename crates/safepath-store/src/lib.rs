@@ -136,7 +136,7 @@ mod tests {
             )
             .expect("migrated metadata");
 
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         assert_eq!(metadata.0, "undo");
         assert_eq!(metadata.1.as_deref(), Some("record-0"));
         assert_eq!(metadata.2, "completed");
