@@ -86,6 +86,79 @@ export function formatExecutionStrategy(strategy: string) {
   }
 }
 
+export interface DestinationFolderPreview {
+  folderPath: string
+  relativeFolderPath: string
+  itemCount: number
+}
+
+export interface DestinationImpactPreview {
+  affectedFolderCount: number
+  routedActionCount: number
+  moveActionCount: number
+  reviewCopyActionCount: number
+  unresolvedActionCount: number
+  folders: DestinationFolderPreview[]
+}
+
+export function buildDestinationImpactPreview(plan: PlanDto): DestinationImpactPreview {
+  const folderCounts = new Map<string, number>()
+  const normalizedRoot = normalizePath(plan.destinationRoot)
+  let moveActionCount = 0
+  let reviewCopyActionCount = 0
+
+  for (const action of plan.actions) {
+    if (!action.destinationPath) {
+      continue
+    }
+
+    const destinationPath = normalizePath(action.destinationPath)
+    const lastSlash = destinationPath.lastIndexOf('/')
+    const folderPath = lastSlash > 0 ? destinationPath.slice(0, lastSlash) : destinationPath
+    folderCounts.set(folderPath, (folderCounts.get(folderPath) ?? 0) + 1)
+
+    if (action.actionKind === 'move') {
+      moveActionCount += 1
+    } else if (action.actionKind === 'review') {
+      reviewCopyActionCount += 1
+    }
+  }
+
+  const folders = [...folderCounts.entries()]
+    .map(([folderPath, itemCount]) => ({
+      folderPath,
+      relativeFolderPath: relativeFolderPath(normalizedRoot, folderPath),
+      itemCount,
+    }))
+    .sort((left, right) => right.itemCount - left.itemCount || left.folderPath.localeCompare(right.folderPath))
+
+  return {
+    affectedFolderCount: folders.length,
+    routedActionCount: moveActionCount + reviewCopyActionCount,
+    moveActionCount,
+    reviewCopyActionCount,
+    unresolvedActionCount: plan.summary.totalActions - (moveActionCount + reviewCopyActionCount),
+    folders,
+  }
+}
+
+function relativeFolderPath(destinationRoot: string, folderPath: string) {
+  if (folderPath === destinationRoot) {
+    return 'Destination root'
+  }
+
+  const rootPrefix = `${destinationRoot}/`
+  if (folderPath.startsWith(rootPrefix)) {
+    return folderPath.slice(rootPrefix.length)
+  }
+
+  return folderPath
+}
+
+function normalizePath(path: string) {
+  return path.replaceAll('\\', '/').replace(/\/+$/, '')
+}
+
 export const SYNTHETIC_CATEGORY_OPTIONS: Array<{
   category: SyntheticDatasetCategory
   label: string

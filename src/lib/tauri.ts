@@ -5,6 +5,7 @@ import type {
   AnalysisProgressEvent,
   AnalysisSummaryDto,
   AppStatusDto,
+  DuplicateReviewGroupDetailsDto,
   BuildPlanRequest,
   ExecutePlanRequest,
   ExecutionCompletedEvent,
@@ -139,6 +140,20 @@ export async function updateReviewState(request: UpdateReviewStateRequest): Prom
 
 export async function setDuplicateKeeper(request: SetDuplicateKeeperRequest): Promise<PlanDto> {
   return invokeDesktop<PlanDto>('set_duplicate_keeper', { request })
+}
+
+export async function getDuplicateReviewGroupDetails(
+  planId: string,
+  groupId: string,
+): Promise<DuplicateReviewGroupDetailsDto> {
+  return invokeDesktop<DuplicateReviewGroupDetailsDto>('get_duplicate_review_group_details', {
+    planId,
+    groupId,
+  })
+}
+
+export async function revealPathInFileManager(path: string): Promise<void> {
+  return invokeDesktop<void>('reveal_path_in_file_manager', { path })
 }
 
 export async function executePlan(request: ExecutePlanRequest): Promise<ExecutionSessionDto> {

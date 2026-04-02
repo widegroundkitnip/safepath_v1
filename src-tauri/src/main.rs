@@ -16,7 +16,10 @@ use commands::learner::{
     record_learner_suggestion_feedback, save_learner_draft_as_preset,
 };
 use commands::planning::{build_plan, get_presets};
-use commands::review::{get_plan, set_duplicate_keeper, update_review_state};
+use commands::review::{
+    get_duplicate_review_group_details, get_plan, reveal_path_in_file_manager,
+    set_duplicate_keeper, update_review_state,
+};
 use commands::scan::{
     cancel_scan, get_analysis_summary, get_history_page, get_manifest_page, get_scan_status,
     run_expensive_analysis, set_protection_override, start_scan,
@@ -118,8 +121,10 @@ fn main() {
             get_presets,
             build_plan,
             get_plan,
+            get_duplicate_review_group_details,
             update_review_state,
             set_duplicate_keeper,
+            reveal_path_in_file_manager,
             get_execution_preflight,
             execute_plan,
             get_execution_status,

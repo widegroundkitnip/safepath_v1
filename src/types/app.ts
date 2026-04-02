@@ -552,6 +552,30 @@ export interface PlanDuplicateGroupDto {
   recommendedKeeperReason: string | null
 }
 
+export interface DuplicateReviewGroupDetailsDto {
+  groupId: string
+  representativeName: string
+  certainty: DuplicateCertainty
+  itemCount: number
+  selectedKeeperEntryId: string | null
+  recommendedKeeperEntryId: string | null
+  recommendedKeeperReason: string | null
+  members: DuplicateReviewMemberDto[]
+}
+
+export interface DuplicateReviewMemberDto {
+  entryId: string
+  actionId: string | null
+  path: string
+  name: string
+  sizeBytes: number
+  createdAtEpochMs: number | null
+  modifiedAtEpochMs: number | null
+  reviewState: ReviewState | null
+  isSelectedKeeper: boolean
+  isRecommendedKeeper: boolean
+}
+
 export interface PlanSummaryDto {
   totalActions: number
   moveActions: number

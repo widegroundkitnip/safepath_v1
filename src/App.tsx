@@ -13,6 +13,7 @@ import {
   generateSyntheticDataset,
   getAnalysisSummary,
   getAppStatus,
+  getDuplicateReviewGroupDetails,
   getExecutionPreflight,
   getExecutionStatus,
   getHistoryPage,
@@ -34,6 +35,7 @@ import {
   onScanStarted,
   onScanProgress,
   recordLearnerSuggestionFeedback,
+  revealPathInFileManager,
   runExpensiveAnalysis,
   saveLearnerDraftAsPreset,
   selectDestinations,
@@ -48,6 +50,7 @@ import {
 import type {
   AnalysisSummaryDto,
   AppStatusDto,
+  DuplicateReviewGroupDetailsDto,
   ExecutionSessionDto,
   GenerateSyntheticDatasetResultDto,
   HistoryEntryDto,
@@ -70,9 +73,13 @@ import type {
 import {
   actionMatchesBucket,
   ANALYSIS_DUPLICATE_PAGE_SIZE,
+  buildDestinationImpactPreview,
   countBucket,
   EXECUTION_RECORD_PAGE_SIZE,
+  type DestinationFolderPreview,
+  formatBytes,
   formatExecutionStrategy,
+  formatTimestamp,
   HISTORY_PAGE_SIZE,
   HISTORY_SESSION_RECORD_PAGE_SIZE,
   isDuplicateKeeperObservation,
@@ -106,6 +113,10 @@ function App() {
   const [executionPreflightIssues, setExecutionPreflightIssues] = useState<PreflightIssueDto[]>([])
   const [reviewPageIndex, setReviewPageIndex] = useState(0)
   const [reviewGroupPageIndex, setReviewGroupPageIndex] = useState(0)
+  const [selectedDuplicateGroupId, setSelectedDuplicateGroupId] = useState<string | null>(null)
+  const [duplicateGroupDetails, setDuplicateGroupDetails] =
+    useState<DuplicateReviewGroupDetailsDto | null>(null)
+  const [showAllDestinationPreviewFolders, setShowAllDestinationPreviewFolders] = useState(false)
   const [analysisDuplicatePageIndex, setAnalysisDuplicatePageIndex] = useState(0)
   const [protectionPageIndex, setProtectionPageIndex] = useState(0)
   const [executionRecordPageIndex, setExecutionRecordPageIndex] = useState(0)
@@ -128,6 +139,7 @@ function App() {
   const [isUpdatingReview, setIsUpdatingReview] = useState(false)
   const [isExecutingPlan, setIsExecutingPlan] = useState(false)
   const [isLoadingExecutionPreflight, setIsLoadingExecutionPreflight] = useState(false)
+  const [isLoadingDuplicateGroupDetails, setIsLoadingDuplicateGroupDetails] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isUndoingHistory, setIsUndoingHistory] = useState(false)
   const [activeLearnerSuggestionId, setActiveLearnerSuggestionId] = useState<string | null>(null)
@@ -183,6 +195,18 @@ function App() {
     () => paginateItems(plan?.duplicateGroups ?? [], reviewGroupPageIndex, REVIEW_GROUP_PAGE_SIZE),
     [plan?.duplicateGroups, reviewGroupPageIndex],
   )
+  const destinationImpactPreview = useMemo(
+    () => (plan ? buildDestinationImpactPreview(plan) : null),
+    [plan],
+  )
+  const visibleDestinationPreviewFolders = useMemo(() => {
+    if (!destinationImpactPreview) {
+      return [] as DestinationFolderPreview[]
+    }
+    return showAllDestinationPreviewFolders
+      ? destinationImpactPreview.folders
+      : destinationImpactPreview.folders.slice(0, 5)
+  }, [destinationImpactPreview, showAllDestinationPreviewFolders])
   const analysisDuplicatePage = useMemo(
     () =>
       paginateItems(
@@ -222,6 +246,10 @@ function App() {
   const selectedAction =
     filteredPlanActions.find((action) => action.actionId === selectedActionId) ??
     filteredPlanActions[0] ??
+    null
+  const selectedDuplicateGroup =
+    plan?.duplicateGroups.find((group) => group.groupId === selectedDuplicateGroupId) ??
+    reviewGroupPage.items[0] ??
     null
   const approvedActionCount =
     plan?.actions.filter((action) => action.reviewState === 'approved').length ?? 0
@@ -527,6 +555,8 @@ function App() {
     if (!plan) {
       setSelectedActionId(null)
       setExecutionPreflightIssues([])
+      setSelectedDuplicateGroupId(null)
+      setDuplicateGroupDetails(null)
       return
     }
 
@@ -538,7 +568,59 @@ function App() {
   useEffect(() => {
     setReviewPageIndex(0)
     setReviewGroupPageIndex(0)
+    setShowAllDestinationPreviewFolders(false)
   }, [plan?.planId])
+
+  useEffect(() => {
+    if (reviewGroupPage.items.length === 0) {
+      setSelectedDuplicateGroupId(null)
+      setDuplicateGroupDetails(null)
+      return
+    }
+
+    if (!selectedDuplicateGroupId || !reviewGroupPage.items.some((group) => group.groupId === selectedDuplicateGroupId)) {
+      setSelectedDuplicateGroupId(reviewGroupPage.items[0]?.groupId ?? null)
+    }
+  }, [reviewGroupPage.items, selectedDuplicateGroupId])
+
+  useEffect(() => {
+    if (!plan?.planId || !selectedDuplicateGroup?.groupId) {
+      setDuplicateGroupDetails(null)
+      return
+    }
+
+    let active = true
+    setIsLoadingDuplicateGroupDetails(true)
+    getDuplicateReviewGroupDetails(plan.planId, selectedDuplicateGroup.groupId)
+      .then((details) => {
+        if (active) {
+          setDuplicateGroupDetails(details)
+        }
+      })
+      .catch((nextError) => {
+        if (active) {
+          setError(
+            nextError instanceof Error
+              ? nextError.message
+              : 'Failed to load duplicate review details.',
+          )
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingDuplicateGroupDetails(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [
+    plan?.planId,
+    selectedDuplicateGroup?.groupId,
+    selectedDuplicateGroup?.selectedKeeperEntryId,
+    selectedDuplicateGroup?.recommendedKeeperEntryId,
+  ])
 
   useEffect(() => {
     if (!plan?.planId || executionIsActive) {
@@ -1078,6 +1160,15 @@ function App() {
     }
   }
 
+  async function handleRevealPath(path: string) {
+    setError(null)
+    try {
+      await revealPathInFileManager(path)
+    } catch (nextError) {
+      setError(messageFromInvokeError(nextError, 'Failed to reveal the selected path.'))
+    }
+  }
+
   async function handleLearnerSuggestionFeedback(
     suggestion: LearnerSuggestionDto,
     feedback: LearnerSuggestionFeedbackKind,
@@ -1563,6 +1654,82 @@ function App() {
                     </div>
                   </dl>
                   <p className="status-card__summary">Destination root: {plan.destinationRoot}</p>
+                  <div className="detail-stack">
+                    <div className="status-card__header">
+                      <div>
+                        <p className="status-card__eyebrow">Destination impact preview</p>
+                        <h3>Read-only first look</h3>
+                      </div>
+                      <span className="status-pill status-pill--neutral">
+                        {destinationImpactPreview?.affectedFolderCount ?? 0} folder
+                        {destinationImpactPreview?.affectedFolderCount === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <p className="status-card__summary">
+                      This preview only shows destinations Safepath can already name. It is meant to
+                      answer “where will things land?” without pretending to be a full tree diff.
+                    </p>
+                    {destinationImpactPreview && destinationImpactPreview.routedActionCount > 0 ? (
+                      <>
+                        <dl className="status-grid">
+                          <div>
+                            <dt>Affected folders</dt>
+                            <dd>{destinationImpactPreview.affectedFolderCount}</dd>
+                          </div>
+                          <div>
+                            <dt>Routed actions</dt>
+                            <dd>{destinationImpactPreview.routedActionCount}</dd>
+                          </div>
+                          <div>
+                            <dt>Move actions</dt>
+                            <dd>{destinationImpactPreview.moveActionCount}</dd>
+                          </div>
+                          <div>
+                            <dt>No destination yet</dt>
+                            <dd>{destinationImpactPreview.unresolvedActionCount}</dd>
+                          </div>
+                        </dl>
+                        <p className="status-card__summary">
+                          Review-only, blocked, and duplicate-only actions without a concrete
+                          destination stay outside this preview until the plan becomes more specific.
+                        </p>
+                        <ul className="manifest-list">
+                          {visibleDestinationPreviewFolders.map((folder) => (
+                            <li
+                              key={folder.folderPath}
+                              className="manifest-list__item manifest-list__item--stacked"
+                            >
+                              <div>
+                                <strong>{folder.relativeFolderPath}</strong>
+                                <p>{folder.itemCount} planned item{folder.itemCount === 1 ? '' : 's'}</p>
+                                <p>{folder.folderPath}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                        {destinationImpactPreview.folders.length > 5 ? (
+                          <div className="button-row button-row--compact">
+                            <button
+                              className="action-button action-button--secondary"
+                              onClick={() =>
+                                setShowAllDestinationPreviewFolders((current) => !current)
+                              }
+                              type="button"
+                            >
+                              {showAllDestinationPreviewFolders
+                                ? 'Show fewer folders'
+                                : `Show all ${destinationImpactPreview.folders.length} folders`}
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="status-card__summary">
+                        This plan does not have enough concrete destination paths to preview yet.
+                        That is expected for duplicate-only or review-heavy plans.
+                      </p>
+                    )}
+                  </div>
                   {approvedActionCount > 0 ? (
                     <div className="detail-stack">
                       <div className="status-card__header">
@@ -1945,8 +2112,18 @@ function App() {
                   </div>
                   <ul className="manifest-list">
                     {reviewGroupPage.items.map((group) => (
-                      <li key={group.groupId} className="manifest-list__item manifest-list__item--stacked">
-                        <div>
+                      <li
+                        key={group.groupId}
+                        className={`manifest-list__item manifest-list__item--stacked ${
+                          selectedDuplicateGroup?.groupId === group.groupId
+                            ? 'manifest-list__item--selected'
+                            : ''
+                        }`}
+                      >
+                        <div
+                          className="review-item-main"
+                          onClick={() => setSelectedDuplicateGroupId(group.groupId)}
+                        >
                           <strong>{group.representativeName}</strong>
                           <p>
                             {group.itemCount} items | {group.certainty}
@@ -1995,6 +2172,82 @@ function App() {
                       </li>
                     ))}
                   </ul>
+                  {selectedDuplicateGroup ? (
+                    <div className="detail-stack">
+                      <header className="status-card__header">
+                        <div>
+                          <p className="status-card__eyebrow">Keeper confidence</p>
+                          <h3>{selectedDuplicateGroup.representativeName}</h3>
+                        </div>
+                        <span className="status-pill status-pill--neutral">
+                          {duplicateGroupDetails?.members.length ?? selectedDuplicateGroup.itemCount} files
+                        </span>
+                      </header>
+                      <p className="status-card__summary">
+                        Compare paths, timestamps, and sizes before you commit to a keeper.
+                        Safepath's recommendation is only a starting point.
+                      </p>
+                      {selectedDuplicateGroup.recommendedKeeperReason ? (
+                        <p className="status-card__summary">
+                          Suggested keeper: {selectedDuplicateGroup.recommendedKeeperEntryId ?? 'none yet'}.
+                          {' '}
+                          {selectedDuplicateGroup.recommendedKeeperReason}
+                        </p>
+                      ) : null}
+                      {isLoadingDuplicateGroupDetails ? (
+                        <p className="status-card__summary">Loading duplicate details…</p>
+                      ) : duplicateGroupDetails ? (
+                        <ul className="manifest-list">
+                          {duplicateGroupDetails.members.map((member) => (
+                            <li
+                              key={member.entryId}
+                              className="manifest-list__item manifest-list__item--stacked"
+                            >
+                              <div>
+                                <strong>{member.name}</strong>
+                                <p>{member.path}</p>
+                                <p>
+                                  {formatBytes(member.sizeBytes)} | Modified{' '}
+                                  {formatTimestamp(member.modifiedAtEpochMs)} | Created{' '}
+                                  {formatTimestamp(member.createdAtEpochMs)}
+                                </p>
+                                <p>
+                                  Review state: {member.reviewState ?? 'not tracked'}
+                                  {member.isRecommendedKeeper ? ' | suggested keeper' : ''}
+                                  {member.isSelectedKeeper ? ' | selected keeper' : ''}
+                                </p>
+                              </div>
+                              <div className="button-row button-row--compact">
+                                <button
+                                  className={`action-button action-button--secondary ${
+                                    member.isSelectedKeeper ? 'action-button--selected' : ''
+                                  }`}
+                                  disabled={isUpdatingReview}
+                                  onClick={() =>
+                                    handleSetDuplicateKeeper(selectedDuplicateGroup, member.entryId)
+                                  }
+                                  type="button"
+                                >
+                                  {member.isSelectedKeeper ? 'Keeper selected' : 'Use as keeper'}
+                                </button>
+                                <button
+                                  className="action-button action-button--secondary"
+                                  onClick={() => void handleRevealPath(member.path)}
+                                  type="button"
+                                >
+                                  Reveal path
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="status-card__summary">
+                          Pick a duplicate group to inspect its members in more detail.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="status-card">

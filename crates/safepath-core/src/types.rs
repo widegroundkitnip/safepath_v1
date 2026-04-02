@@ -540,6 +540,34 @@ pub struct PlanDuplicateGroupDto {
     pub recommended_keeper_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateReviewGroupDetailsDto {
+    pub group_id: String,
+    pub representative_name: String,
+    pub certainty: DuplicateCertainty,
+    pub item_count: u32,
+    pub selected_keeper_entry_id: Option<String>,
+    pub recommended_keeper_entry_id: Option<String>,
+    pub recommended_keeper_reason: Option<String>,
+    pub members: Vec<DuplicateReviewMemberDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateReviewMemberDto {
+    pub entry_id: String,
+    pub action_id: Option<String>,
+    pub path: String,
+    pub name: String,
+    pub size_bytes: u64,
+    pub created_at_epoch_ms: Option<i64>,
+    pub modified_at_epoch_ms: Option<i64>,
+    pub review_state: Option<ReviewState>,
+    pub is_selected_keeper: bool,
+    pub is_recommended_keeper: bool,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum PlannedActionKind {
