@@ -373,6 +373,31 @@ export interface SaveLearnerDraftPreviewRequest {
   draftId: string
 }
 
+export type AiEvaluationStatus = 'keepHeuristic' | 'candidatePromising' | 'insufficientData'
+
+export interface AiEvaluationTaskDto {
+  taskId: string
+  title: string
+  summary: string
+  baselineName: string
+  candidateName: string | null
+  observationCount: number
+  candidateCoverageCount: number
+  baselineMatchRate: number | null
+  candidateMatchRate: number | null
+  recommendation: string
+  confidenceGuidance: string
+  trustNotes: string[]
+  status: AiEvaluationStatus
+}
+
+export interface AiEvaluationSnapshotDto {
+  generatedAtEpochMs: number
+  totalObservationCount: number
+  tasks: AiEvaluationTaskDto[]
+  notes: string[]
+}
+
 export interface HistoryPageDto {
   page: number
   pageSize: number

@@ -1,4 +1,5 @@
 pub mod analyzer;
+pub mod evaluation;
 pub mod executor;
 pub mod history;
 pub mod learner;
@@ -13,11 +14,12 @@ pub mod types;
 
 pub use types::{
     ActionExplanationDto, ActionRecordDto, ActionRecordStatus, AiAssistedSuggestionDto,
-    AiAssistedSuggestionKind, AnalysisProgressEvent, AnalysisStage, AnalysisSummaryDto,
-    AppStatusDto, BoundaryKind, BuildPlanRequest, ChecksumMode, ConflictKind, DuplicateCertainty,
-    DuplicateGroupDto, DuplicatePolicy, DuplicateReviewGroupDetailsDto, DuplicateReviewMemberDto,
-    ExecutePlanRequest, ExecutionCompletedEvent, ExecutionOperationKind, ExecutionProgressEvent,
-    ExecutionSessionDto, ExecutionSessionStatus, ExecutionStrategy, FallbackBehavior, FileCategory,
+    AiAssistedSuggestionKind, AiEvaluationSnapshotDto, AiEvaluationStatus, AiEvaluationTaskDto,
+    AnalysisProgressEvent, AnalysisStage, AnalysisSummaryDto, AppStatusDto, BoundaryKind,
+    BuildPlanRequest, ChecksumMode, ConflictKind, DuplicateCertainty, DuplicateGroupDto,
+    DuplicatePolicy, DuplicateReviewGroupDetailsDto, DuplicateReviewMemberDto, ExecutePlanRequest,
+    ExecutionCompletedEvent, ExecutionOperationKind, ExecutionProgressEvent, ExecutionSessionDto,
+    ExecutionSessionStatus, ExecutionStrategy, FallbackBehavior, FileCategory,
     GenerateSyntheticDatasetRequest, GenerateSyntheticDatasetResultDto, HistoryEntryDto,
     HistoryPageDto, HistorySessionSummaryDto, LearnerDraftPreviewDto, LearnerObservationDto,
     LearnerSuggestionDto, LearnerSuggestionFeedbackKind, ManifestEntryDto, ManifestEntryKind,
@@ -28,8 +30,8 @@ pub use types::{
     ProtectionOverrideKind, ProtectionState, RecordLearnerSuggestionFeedbackRequest,
     ReviewDecision, ReviewMode, ReviewState, RuleConditionDto, RuleDto, RuleSetDto, SafetyFlag,
     SaveLearnerDraftPreviewRequest, ScanJobState, ScanJobStatusDto, ScanPageReadyEvent,
-    ScanProgressEvent, ScanStartedEvent, SetDuplicateKeeperRequest, StartScanRequest,
-    SourceProfileKind, StructureSignalDto, StructureSignalKind, SyntheticCategoryCountDto,
+    ScanProgressEvent, ScanStartedEvent, SetDuplicateKeeperRequest, SourceProfileKind,
+    StartScanRequest, StructureSignalDto, StructureSignalKind, SyntheticCategoryCountDto,
     SyntheticDatasetCategory, SyntheticDatasetManifestDto, UndoRecordRequest, UndoSessionRequest,
     UpdateReviewStateRequest, WorkflowPhase,
 };

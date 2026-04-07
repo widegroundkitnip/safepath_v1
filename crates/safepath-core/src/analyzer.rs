@@ -465,7 +465,9 @@ fn build_ai_assisted_suggestions(
             suggested_protection_kind: None,
         });
 
-        if let Some((preset_id, preset_name, summary)) = suggested_preset(profile.kind) {
+        if let Some((preset_id, preset_name, summary)) =
+            suggested_preset_for_source_profile(profile.kind)
+        {
             suggestions.push(AiAssistedSuggestionDto {
                 suggestion_id: format!("suggested-preset-{preset_id}"),
                 kind: AiAssistedSuggestionKind::PresetRecommendation,
@@ -780,7 +782,7 @@ fn structure_profile_summary(kind: SourceProfileKind) -> &'static str {
     }
 }
 
-fn suggested_preset(
+pub(crate) fn suggested_preset_for_source_profile(
     kind: SourceProfileKind,
 ) -> Option<(&'static str, &'static str, &'static str)> {
     match kind {

@@ -12,8 +12,8 @@ use commands::execution::{
     execute_plan, get_execution_preflight, get_execution_status, undo_record, undo_session,
 };
 use commands::learner::{
-    get_learner_draft_previews, get_learner_observations, get_learner_suggestions,
-    record_learner_suggestion_feedback, save_learner_draft_as_preset,
+    get_ai_evaluation_snapshot, get_learner_draft_previews, get_learner_observations,
+    get_learner_suggestions, record_learner_suggestion_feedback, save_learner_draft_as_preset,
 };
 use commands::planning::{build_plan, get_presets};
 use commands::review::{
@@ -133,6 +133,7 @@ fn main() {
             get_learner_observations,
             get_learner_suggestions,
             get_learner_draft_previews,
+            get_ai_evaluation_snapshot,
             record_learner_suggestion_feedback,
             save_learner_draft_as_preset,
             start_scan,

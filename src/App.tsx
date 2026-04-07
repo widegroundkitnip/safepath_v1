@@ -11,6 +11,7 @@ import {
   cancelScan,
   executePlan,
   generateSyntheticDataset,
+  getAiEvaluationSnapshot,
   getAnalysisSummary,
   getAppStatus,
   getDuplicateReviewGroupDetails,
@@ -49,6 +50,7 @@ import {
 } from './lib/tauri'
 import type {
   AnalysisSummaryDto,
+  AiEvaluationSnapshotDto,
   AppStatusDto,
   DuplicateReviewGroupDetailsDto,
   ExecutionSessionDto,
@@ -136,6 +138,7 @@ function App() {
   const [learnerDraftPreviews, setLearnerDraftPreviews] = useState<LearnerDraftPreviewDto[]>([])
   const [learnerObservations, setLearnerObservations] = useState<LearnerObservationDto[]>([])
   const [learnerSuggestions, setLearnerSuggestions] = useState<LearnerSuggestionDto[]>([])
+  const [aiEvaluationSnapshot, setAiEvaluationSnapshot] = useState<AiEvaluationSnapshotDto | null>(null)
   const [historyPageIndex, setHistoryPageIndex] = useState(0)
   const [selectedHistoryRecordId, setSelectedHistoryRecordId] = useState<string | null>(null)
   const [selectedHistorySessionId, setSelectedHistorySessionId] = useState<string | null>(null)
@@ -325,14 +328,16 @@ function App() {
   )
 
   async function loadLearnerInsights() {
-    const [observations, suggestions, drafts] = await Promise.all([
+    const [observations, suggestions, drafts, evaluationSnapshot] = await Promise.all([
       getLearnerObservations(16),
       getLearnerSuggestions(200, 8),
       getLearnerDraftPreviews(200, 8),
+      getAiEvaluationSnapshot(5000),
     ])
     setLearnerObservations(observations)
     setLearnerSuggestions(suggestions)
     setLearnerDraftPreviews(drafts)
+    setAiEvaluationSnapshot(evaluationSnapshot)
   }
 
   useEffect(() => {
@@ -370,12 +375,14 @@ function App() {
         getLearnerObservations(16),
         getLearnerSuggestions(200, 8),
         getLearnerDraftPreviews(200, 8),
+        getAiEvaluationSnapshot(5000),
       ])
-        .then(([observations, suggestions, drafts]) => {
+        .then(([observations, suggestions, drafts, evaluationSnapshot]) => {
           if (active) {
             setLearnerObservations(observations)
             setLearnerSuggestions(suggestions)
             setLearnerDraftPreviews(drafts)
+            setAiEvaluationSnapshot(evaluationSnapshot)
           }
         })
         .catch((nextError) => {
@@ -1428,6 +1435,7 @@ function App() {
           isSyntheticSourcePending={isSyntheticSourcePending}
           syntheticDatasetResult={syntheticDatasetResult}
           learnerSuggestions={learnerSuggestions}
+          aiEvaluationSnapshot={aiEvaluationSnapshot}
           learnerDraftPreviews={learnerDraftPreviews}
           duplicateKeeperObservations={duplicateKeeperObservations}
           ruleReviewDecisionObservations={ruleReviewDecisionObservations}

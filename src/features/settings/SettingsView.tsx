@@ -1,5 +1,6 @@
 import { AppStatusSummary } from '../../components/layout/AppStatusSummary'
 import type {
+  AiEvaluationSnapshotDto,
   AppStatusDto,
   GenerateSyntheticDatasetResultDto,
   LearnerDraftPreviewDto,
@@ -10,7 +11,9 @@ import type {
 } from '../../types/app'
 import {
   describeLearnerSuggestion,
+  formatAiEvaluationStatus,
   formatBytes,
+  formatRatePercent,
   formatReviewMode,
   formatSourceProfileKind,
   formatSyntheticCategory,
@@ -22,6 +25,7 @@ import {
 } from '../app/shared'
 
 interface SettingsViewProps {
+  aiEvaluationSnapshot: AiEvaluationSnapshotDto | null
   status: AppStatusDto | null
   presets: PresetDefinitionDto[]
   draftDestinationPath: string
@@ -67,6 +71,7 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({
+  aiEvaluationSnapshot,
   status,
   presets,
   draftDestinationPath,
@@ -119,6 +124,79 @@ export function SettingsView({
             sessions. Today it surfaces learner suggestions, saved draft presets, and observation
             history while the workflow view handles live scan, review, and execution tasks.
           </p>
+        </div>
+        <div className="status-card">
+          <header className="status-card__header">
+            <div>
+              <p className="status-card__eyebrow">AI evaluation snapshot</p>
+              <h3>
+                {aiEvaluationSnapshot ? `${aiEvaluationSnapshot.tasks.length} tracked evaluation task${aiEvaluationSnapshot.tasks.length === 1 ? '' : 's'}` : 'No evaluation snapshot yet'}
+              </h3>
+            </div>
+            <span className="status-pill status-pill--neutral">research aid</span>
+          </header>
+          <p className="status-card__summary">
+            This is a local research view for deciding when ML is justified at all. It does not
+            enable new defaults by itself and exists to compare heuristics against narrow candidate
+            models conservatively.
+          </p>
+          {aiEvaluationSnapshot ? (
+            <>
+              <p className="status-card__summary">
+                {aiEvaluationSnapshot.totalObservationCount} stored observation
+                {aiEvaluationSnapshot.totalObservationCount === 1 ? '' : 's'} analyzed on{' '}
+                {formatTimestamp(aiEvaluationSnapshot.generatedAtEpochMs)}.
+              </p>
+              <ul className="manifest-list">
+                {aiEvaluationSnapshot.tasks.map((task) => (
+                  <li key={task.taskId} className="manifest-list__item manifest-list__item--stacked">
+                    <div>
+                      <strong>{task.title}</strong>
+                      <p>{task.summary}</p>
+                      <p>Baseline: {task.baselineName}</p>
+                      {task.candidateName ? <p>Candidate: {task.candidateName}</p> : null}
+                      <p>
+                        {task.observationCount} observations | baseline {formatRatePercent(task.baselineMatchRate)} | candidate {formatRatePercent(task.candidateMatchRate)}
+                      </p>
+                      <p>
+                        candidate coverage {task.candidateCoverageCount} / {task.observationCount}
+                      </p>
+                      <p>{task.recommendation}</p>
+                      <p>{task.confidenceGuidance}</p>
+                      {task.trustNotes.length > 0 ? (
+                        <p>Trust notes: {task.trustNotes.join(' | ')}</p>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`status-pill ${
+                        task.status === 'candidatePromising'
+                          ? 'status-pill--ready'
+                          : task.status === 'keepHeuristic'
+                            ? 'status-pill--neutral'
+                            : 'status-pill--needsAttention'
+                      }`}
+                    >
+                      {formatAiEvaluationStatus(task.status)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {aiEvaluationSnapshot.notes.length > 0 ? (
+                <div className="empty-card">
+                  <strong>Snapshot notes</strong>
+                  <p>{aiEvaluationSnapshot.notes.join(' | ')}</p>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="empty-card">
+              <strong>No evaluation snapshot yet</strong>
+              <p>
+                The snapshot appears after Safepath can read local learner observations and build a
+                comparison between baseline heuristics and candidate signals.
+              </p>
+            </div>
+          )}
         </div>
         <div className="status-card">
           <header className="status-card__header">

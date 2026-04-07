@@ -1,6 +1,7 @@
 import type {
   AiAssistedSuggestionKind,
   AiAssistedSuggestionDto,
+  AiEvaluationStatus,
   LearnerObservationDto,
   LearnerSuggestionDto,
   MediaDateSource,
@@ -99,6 +100,25 @@ export function formatConfidenceBand(confidence: number) {
     return 'good signal'
   }
   return 'tentative signal'
+}
+
+export function formatAiEvaluationStatus(status: AiEvaluationStatus) {
+  switch (status) {
+    case 'candidatePromising':
+      return 'candidate promising'
+    case 'keepHeuristic':
+      return 'keep heuristic'
+    case 'insufficientData':
+    default:
+      return 'insufficient data'
+  }
+}
+
+export function formatRatePercent(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return 'n/a'
+  }
+  return `${Math.round(value * 100)}%`
 }
 
 export function describeAiSuggestion(

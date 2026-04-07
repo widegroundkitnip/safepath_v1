@@ -378,6 +378,41 @@ pub struct SaveLearnerDraftPreviewRequest {
     pub draft_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiEvaluationSnapshotDto {
+    pub generated_at_epoch_ms: i64,
+    pub total_observation_count: u32,
+    pub tasks: Vec<AiEvaluationTaskDto>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiEvaluationTaskDto {
+    pub task_id: String,
+    pub title: String,
+    pub summary: String,
+    pub baseline_name: String,
+    pub candidate_name: Option<String>,
+    pub observation_count: u32,
+    pub candidate_coverage_count: u32,
+    pub baseline_match_rate: Option<f32>,
+    pub candidate_match_rate: Option<f32>,
+    pub recommendation: String,
+    pub confidence_guidance: String,
+    pub trust_notes: Vec<String>,
+    pub status: AiEvaluationStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AiEvaluationStatus {
+    KeepHeuristic,
+    CandidatePromising,
+    InsufficientData,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestEntryDto {

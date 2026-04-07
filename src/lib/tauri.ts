@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   AnalysisProgressEvent,
   AnalysisSummaryDto,
+  AiEvaluationSnapshotDto,
   AppStatusDto,
   DuplicateReviewGroupDetailsDto,
   BuildPlanRequest,
@@ -223,6 +224,14 @@ export async function getLearnerDraftPreviews(
   return invokeDesktop<LearnerDraftPreviewDto[]>('get_learner_draft_previews', {
     observationLimit,
     suggestionLimit,
+  })
+}
+
+export async function getAiEvaluationSnapshot(
+  observationLimit: number,
+): Promise<AiEvaluationSnapshotDto> {
+  return invokeDesktop<AiEvaluationSnapshotDto>('get_ai_evaluation_snapshot', {
+    observationLimit,
   })
 }
 

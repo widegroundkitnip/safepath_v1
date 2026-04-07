@@ -1,5 +1,6 @@
 use safepath_core::{
-    presets, LearnerDraftPreviewDto, LearnerObservationDto, LearnerSuggestionDto,
+    evaluation, presets, AiEvaluationSnapshotDto, LearnerDraftPreviewDto, LearnerObservationDto,
+    LearnerSuggestionDto,
     PresetDefinitionDto, RecordLearnerSuggestionFeedbackRequest, SaveLearnerDraftPreviewRequest,
 };
 use tauri::State;
@@ -35,6 +36,15 @@ pub fn get_learner_draft_previews(
     state
         .store
         .list_learner_draft_previews(observation_limit, suggestion_limit)
+}
+
+#[tauri::command]
+pub fn get_ai_evaluation_snapshot(
+    state: State<'_, AppState>,
+    observation_limit: u32,
+) -> Result<AiEvaluationSnapshotDto, String> {
+    let observations = state.store.list_learner_observations(observation_limit)?;
+    Ok(evaluation::build_ai_evaluation_snapshot(&observations))
 }
 
 #[tauri::command]
