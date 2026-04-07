@@ -7,11 +7,37 @@ use uuid::Uuid;
 
 use crate::test_data::SYNTHETIC_DATASET_MANIFEST_NAME;
 use crate::types::{
-    AnalysisSummaryDto, BoundaryKind, CategoryCountDto, DuplicateCertainty, DuplicateGroupDto,
-    DuplicateMemberDto, FileCategory, ManifestEntryDto, ManifestEntryKind, ProtectionDetectionDto,
-    ProtectionOverrideDto, ProtectionOverrideKind, ProtectionState, StructureSignalDto,
+    AiAssistedSuggestionDto, AiAssistedSuggestionKind, AnalysisSummaryDto, BoundaryKind,
+    CategoryCountDto, DuplicateCertainty, DuplicateGroupDto, DuplicateMemberDto, FileCategory,
+    ManifestEntryDto, ManifestEntryKind, ProtectionDetectionDto, ProtectionOverrideDto,
+    ProtectionOverrideKind, ProtectionState, SourceProfileKind, StructureSignalDto,
     StructureSignalKind, SyntheticDatasetManifestDto,
 };
+
+#[derive(Debug, Clone)]
+struct StructureIntelligenceInputs {
+    total_files: u64,
+    image_files: u64,
+    video_files: u64,
+    archive_files: u64,
+    code_files: u64,
+    unknown_files: u64,
+    no_extension_count: u64,
+    root_file_count: u64,
+    max_depth: usize,
+    hidden_entries: u64,
+    mixed_content_detected: bool,
+    marker_folder_count: usize,
+    source_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct StructureProfileMatch {
+    kind: SourceProfileKind,
+    score: u8,
+    confidence: f32,
+    reasons: Vec<String>,
+}
 
 pub fn analyze_manifest(
     job_id: &str,
@@ -29,8 +55,11 @@ pub fn analyze_manifest(
     let mut folder_categories: BTreeMap<String, BTreeSet<FileCategory>> = BTreeMap::new();
     let mut markers_by_parent: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut directories_with_children: HashSet<String> = HashSet::new();
+    let mut source_roots = BTreeSet::new();
+    let mut total_files = 0_u64;
 
     for entry in entries {
+        source_roots.insert(entry.source_root.clone());
         let category = classify_entry(entry);
         *category_counts.entry(category).or_insert(0) += 1;
 
@@ -77,6 +106,7 @@ pub fn analyze_manifest(
         }
 
         if entry.entry_kind == ManifestEntryKind::File {
+            total_files += 1;
             if entry.size_bytes > 0 {
                 likely_duplicate_buckets
                     .entry((entry.name.to_lowercase(), entry.size_bytes))
@@ -119,10 +149,10 @@ pub fn analyze_manifest(
         });
     }
 
-    if folder_categories
+    let mixed_content_detected = folder_categories
         .values()
-        .any(|categories| categories.len() >= 4)
-    {
+        .any(|categories| categories.len() >= 4);
+    if mixed_content_detected {
         structure_signals.push(StructureSignalDto {
             kind: StructureSignalKind::MixedContent,
             description: "At least one folder mixes four or more file categories.".to_string(),
@@ -148,6 +178,7 @@ pub fn analyze_manifest(
         })
         .collect();
 
+    let marker_folder_count = markers_by_parent.len();
     let mut detected_protections: Vec<ProtectionDetectionDto> = markers_by_parent
         .into_iter()
         .map(|(path, markers)| {
@@ -203,6 +234,26 @@ pub fn analyze_manifest(
         });
     }
 
+    let ai_assisted_suggestions = build_ai_assisted_suggestions(
+        &StructureIntelligenceInputs {
+            total_files,
+            image_files: category_total(&category_counts, FileCategory::Image),
+            video_files: category_total(&category_counts, FileCategory::Video),
+            archive_files: category_total(&category_counts, FileCategory::Archive),
+            code_files: category_total(&category_counts, FileCategory::Code),
+            unknown_files: unknown_count,
+            no_extension_count,
+            root_file_count,
+            max_depth,
+            hidden_entries,
+            mixed_content_detected,
+            marker_folder_count,
+            source_roots: source_roots.into_iter().collect(),
+        },
+        &detected_protections,
+        protection_overrides,
+    );
+
     AnalysisSummaryDto {
         job_id: job_id.to_string(),
         category_counts: category_counts
@@ -216,6 +267,7 @@ pub fn analyze_manifest(
         skipped_large_synthetic_files: 0,
         detected_protections,
         protection_overrides: protection_overrides.to_vec(),
+        ai_assisted_suggestions,
     }
 }
 
@@ -391,6 +443,383 @@ fn boundary_from_override(override_kind: ProtectionOverrideKind) -> BoundaryKind
     }
 }
 
+fn build_ai_assisted_suggestions(
+    inputs: &StructureIntelligenceInputs,
+    detected_protections: &[ProtectionDetectionDto],
+    protection_overrides: &[ProtectionOverrideDto],
+) -> Vec<AiAssistedSuggestionDto> {
+    let mut suggestions = Vec::new();
+    let profile = best_structure_profile(inputs, detected_protections);
+
+    if let Some(profile) = profile.as_ref() {
+        suggestions.push(AiAssistedSuggestionDto {
+            suggestion_id: format!("structure-profile-{}", structure_profile_slug(profile.kind)),
+            kind: AiAssistedSuggestionKind::SourceProfile,
+            title: structure_profile_title(profile.kind).to_string(),
+            summary: structure_profile_summary(profile.kind).to_string(),
+            confidence: profile.confidence,
+            reasons: profile.reasons.clone(),
+            source_profile_kind: Some(profile.kind),
+            suggested_preset_id: None,
+            suggested_protection_path: None,
+            suggested_protection_kind: None,
+        });
+
+        if let Some((preset_id, preset_name, summary)) = suggested_preset(profile.kind) {
+            suggestions.push(AiAssistedSuggestionDto {
+                suggestion_id: format!("suggested-preset-{preset_id}"),
+                kind: AiAssistedSuggestionKind::PresetRecommendation,
+                title: format!("Suggested preset: {preset_name}"),
+                summary: summary.to_string(),
+                confidence: (profile.confidence - 0.03).max(0.55),
+                reasons: profile.reasons.clone(),
+                source_profile_kind: Some(profile.kind),
+                suggested_preset_id: Some(preset_id.to_string()),
+                suggested_protection_path: None,
+                suggested_protection_kind: None,
+            });
+        }
+    }
+
+    if let Some(protection_suggestion) = build_protection_suggestion(
+        inputs,
+        detected_protections,
+        protection_overrides,
+        profile.as_ref(),
+    ) {
+        suggestions.push(protection_suggestion);
+    }
+
+    suggestions.sort_by(|left, right| {
+        right
+            .confidence
+            .partial_cmp(&left.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    suggestions
+}
+
+fn best_structure_profile(
+    inputs: &StructureIntelligenceInputs,
+    detected_protections: &[ProtectionDetectionDto],
+) -> Option<StructureProfileMatch> {
+    let candidates = vec![
+        score_workspace_profile(inputs, detected_protections),
+        score_media_import_profile(inputs),
+        score_downloads_profile(inputs),
+        score_archive_bundle_profile(inputs),
+    ];
+
+    candidates
+        .into_iter()
+        .flatten()
+        .max_by(|left, right| left.score.cmp(&right.score))
+}
+
+fn score_workspace_profile(
+    inputs: &StructureIntelligenceInputs,
+    detected_protections: &[ProtectionDetectionDto],
+) -> Option<StructureProfileMatch> {
+    let mut score = 0_u8;
+    let mut reasons = Vec::new();
+
+    if !detected_protections.is_empty() {
+        score += 4;
+        reasons.push("Project or workspace markers were detected.".to_string());
+    }
+    if inputs.code_files >= 5 {
+        score += 2;
+        reasons.push(format!(
+            "{} code/project files were detected.",
+            inputs.code_files
+        ));
+    }
+    if inputs.max_depth >= 5 {
+        score += 1;
+        reasons.push(
+            "The folder depth looks more like a nested workspace than a loose inbox.".to_string(),
+        );
+    }
+    if inputs.root_file_count <= 10 && inputs.total_files >= 8 {
+        score += 1;
+        reasons.push(
+            "Most files sit inside nested folders instead of directly in the source root."
+                .to_string(),
+        );
+    }
+
+    structure_profile_match(SourceProfileKind::Workspace, score, 4, reasons)
+}
+
+fn score_media_import_profile(
+    inputs: &StructureIntelligenceInputs,
+) -> Option<StructureProfileMatch> {
+    let media_files = inputs.image_files + inputs.video_files;
+    let mut score = 0_u8;
+    let mut reasons = Vec::new();
+
+    if inputs.total_files >= 8 && media_files * 100 >= inputs.total_files * 70 {
+        score += 4;
+        reasons.push(format!(
+            "{} of {} files look like photos or videos.",
+            media_files, inputs.total_files
+        ));
+    }
+    if inputs.code_files == 0 {
+        score += 1;
+        reasons.push("No code/project files were detected in the scan.".to_string());
+    }
+    if inputs.root_file_count >= 5 {
+        score += 1;
+        reasons.push("Several media files sit directly in the source root, which often means a fresh import batch.".to_string());
+    }
+
+    structure_profile_match(SourceProfileKind::MediaImport, score, 4, reasons)
+}
+
+fn score_downloads_profile(inputs: &StructureIntelligenceInputs) -> Option<StructureProfileMatch> {
+    let diverse_categories = [
+        inputs.image_files > 0,
+        inputs.video_files > 0,
+        inputs.archive_files > 0,
+        inputs.code_files > 0,
+        inputs.unknown_files > 0,
+    ]
+    .into_iter()
+    .filter(|present| *present)
+    .count();
+    let mut score = 0_u8;
+    let mut reasons = Vec::new();
+
+    if inputs.root_file_count >= 15 {
+        score += 3;
+        reasons.push(format!(
+            "{} loose files sit directly in the source root.",
+            inputs.root_file_count
+        ));
+    }
+    if inputs.mixed_content_detected {
+        score += 2;
+        reasons.push("At least one folder mixes many file categories.".to_string());
+    }
+    if inputs.unknown_files + inputs.no_extension_count >= 3 {
+        score += 1;
+        reasons.push(
+            "Unknown files and no-extension leftovers suggest an inbox-style folder.".to_string(),
+        );
+    }
+    if inputs.marker_folder_count == 0 {
+        score += 1;
+        reasons.push("No strong project markers were detected.".to_string());
+    }
+    if diverse_categories >= 4 {
+        score += 1;
+        reasons.push(
+            "The scan mixes several distinct file types instead of one dominant media shape."
+                .to_string(),
+        );
+    }
+
+    structure_profile_match(SourceProfileKind::DownloadsInbox, score, 5, reasons)
+}
+
+fn score_archive_bundle_profile(
+    inputs: &StructureIntelligenceInputs,
+) -> Option<StructureProfileMatch> {
+    let mut score = 0_u8;
+    let mut reasons = Vec::new();
+
+    if inputs.total_files >= 5 && inputs.archive_files * 100 >= inputs.total_files * 35 {
+        score += 4;
+        reasons.push(format!(
+            "{} of {} files look like archives or packaged bundles.",
+            inputs.archive_files, inputs.total_files
+        ));
+    }
+    if inputs.root_file_count >= 5 {
+        score += 1;
+        reasons.push("Many archive files sit directly in the source root.".to_string());
+    }
+    if inputs.hidden_entries == 0 {
+        score += 1;
+        reasons.push(
+            "The scan looks more like exported or packaged files than a working project tree."
+                .to_string(),
+        );
+    }
+
+    structure_profile_match(SourceProfileKind::ArchiveBundle, score, 4, reasons)
+}
+
+fn structure_profile_match(
+    kind: SourceProfileKind,
+    score: u8,
+    threshold: u8,
+    reasons: Vec<String>,
+) -> Option<StructureProfileMatch> {
+    if score < threshold {
+        return None;
+    }
+
+    Some(StructureProfileMatch {
+        kind,
+        score,
+        confidence: (0.58 + f32::from(score.saturating_sub(threshold)) * 0.08).min(0.92),
+        reasons,
+    })
+}
+
+fn build_protection_suggestion(
+    inputs: &StructureIntelligenceInputs,
+    detected_protections: &[ProtectionDetectionDto],
+    protection_overrides: &[ProtectionOverrideDto],
+    profile: Option<&StructureProfileMatch>,
+) -> Option<AiAssistedSuggestionDto> {
+    let overridden_paths = protection_overrides
+        .iter()
+        .map(|override_item| override_item.path.clone())
+        .collect::<HashSet<_>>();
+
+    if inputs.source_roots.len() == 1 && detected_protections.len() >= 2 {
+        let source_root = inputs.source_roots[0].clone();
+        if overridden_paths.contains(&source_root) {
+            return None;
+        }
+
+        return Some(AiAssistedSuggestionDto {
+            suggestion_id: "suggested-parent-boundary".to_string(),
+            kind: AiAssistedSuggestionKind::ProtectionRecommendation,
+            title: "Suggested parent boundary".to_string(),
+            summary:
+                "Several structured subfolders were detected under the same source root. Consider preserving the source root as a parent boundary before broad moves."
+                    .to_string(),
+            confidence: 0.84,
+            reasons: vec![
+                format!(
+                    "{} likely protected subfolders were detected beneath the same source root.",
+                    detected_protections.len()
+                ),
+                "A parent boundary can reduce accidental cross-project moves.".to_string(),
+            ],
+            source_profile_kind: None,
+            suggested_preset_id: None,
+            suggested_protection_path: Some(source_root),
+            suggested_protection_kind: Some(ProtectionOverrideKind::ParentFolder),
+        });
+    }
+
+    let top_detection = detected_protections
+        .iter()
+        .filter(|detection| !overridden_paths.contains(&detection.path))
+        .max_by(|left, right| {
+            left.confidence
+                .unwrap_or_default()
+                .partial_cmp(&right.confidence.unwrap_or_default())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+
+    if profile.is_some_and(|item| item.kind == SourceProfileKind::Workspace)
+        || top_detection.state == ProtectionState::AutoDetectedHigh
+    {
+        return Some(AiAssistedSuggestionDto {
+            suggestion_id: format!(
+                "suggested-protection-{}",
+                normalize_path(&top_detection.path)
+            ),
+            kind: AiAssistedSuggestionKind::ProtectionRecommendation,
+            title: "Suggested protection review".to_string(),
+            summary:
+                "Safepath thinks this path should stay protected before broader organization moves."
+                    .to_string(),
+            confidence: top_detection.confidence.unwrap_or(0.72),
+            reasons: top_detection.reasons.clone(),
+            source_profile_kind: None,
+            suggested_preset_id: None,
+            suggested_protection_path: Some(top_detection.path.clone()),
+            suggested_protection_kind: Some(protection_override_for_boundary(
+                top_detection.boundary_kind,
+            )),
+        });
+    }
+
+    None
+}
+
+fn structure_profile_slug(kind: SourceProfileKind) -> &'static str {
+    match kind {
+        SourceProfileKind::Workspace => "workspace",
+        SourceProfileKind::MediaImport => "media-import",
+        SourceProfileKind::DownloadsInbox => "downloads-inbox",
+        SourceProfileKind::ArchiveBundle => "archive-bundle",
+    }
+}
+
+fn structure_profile_title(kind: SourceProfileKind) -> &'static str {
+    match kind {
+        SourceProfileKind::Workspace => "Workspace-like source detected",
+        SourceProfileKind::MediaImport => "Media import shape detected",
+        SourceProfileKind::DownloadsInbox => "Downloads-style inbox detected",
+        SourceProfileKind::ArchiveBundle => "Archive-heavy batch detected",
+    }
+}
+
+fn structure_profile_summary(kind: SourceProfileKind) -> &'static str {
+    match kind {
+        SourceProfileKind::Workspace => {
+            "This source looks more like a structured workspace than a disposable inbox."
+        }
+        SourceProfileKind::MediaImport => {
+            "This scan looks dominated by photos and videos, which often means a camera or device import."
+        }
+        SourceProfileKind::DownloadsInbox => {
+            "This source looks like a mixed downloads inbox with many loose files and leftovers."
+        }
+        SourceProfileKind::ArchiveBundle => {
+            "This scan looks archive-heavy and may represent packaged exports, downloads, or backup bundles."
+        }
+    }
+}
+
+fn suggested_preset(
+    kind: SourceProfileKind,
+) -> Option<(&'static str, &'static str, &'static str)> {
+    match kind {
+        SourceProfileKind::Workspace => Some((
+            "project_safe",
+            "Project Safe",
+            "Project markers and nested structure suggest starting with the most protection-aware preset.",
+        )),
+        SourceProfileKind::MediaImport => Some((
+            "camera_import",
+            "Camera Import",
+            "A media-heavy import batch usually benefits from a dated photo/video preset first.",
+        )),
+        SourceProfileKind::DownloadsInbox => Some((
+            "downloads_cleanup",
+            "Downloads Cleanup",
+            "A mixed inbox of loose files usually benefits from the most conservative cleanup preset before broader organization.",
+        )),
+        SourceProfileKind::ArchiveBundle => Some((
+            "general_organize",
+            "General Organize",
+            "An archive-heavy batch is usually safest with the broadest conservative preset instead of a narrow import preset.",
+        )),
+    }
+}
+
+fn protection_override_for_boundary(boundary_kind: BoundaryKind) -> ProtectionOverrideKind {
+    match boundary_kind {
+        BoundaryKind::ProjectRoot => ProtectionOverrideKind::ProjectRoot,
+        BoundaryKind::ParentFolder => ProtectionOverrideKind::ParentFolder,
+        BoundaryKind::PreserveBoundary => ProtectionOverrideKind::PreserveBoundary,
+        BoundaryKind::Independent => ProtectionOverrideKind::Independent,
+    }
+}
+
+fn category_total(category_counts: &HashMap<FileCategory, u64>, category: FileCategory) -> u64 {
+    category_counts.get(&category).copied().unwrap_or(0)
+}
+
 fn normalize_path(path: impl AsRef<Path>) -> String {
     path.as_ref().to_string_lossy().replace('\\', "/")
 }
@@ -443,9 +872,9 @@ mod tests {
     use super::{analyze_manifest, run_expensive_analysis};
     use crate::test_data::SYNTHETIC_DATASET_MANIFEST_NAME;
     use crate::types::{
-        BoundaryKind, DuplicateCertainty, ManifestEntryDto, ManifestEntryKind,
-        ProtectionOverrideDto, ProtectionOverrideKind, ProtectionState, StructureSignalKind,
-        SyntheticDatasetCategory, SyntheticDatasetManifestDto,
+        AiAssistedSuggestionKind, BoundaryKind, DuplicateCertainty, ManifestEntryDto,
+        ManifestEntryKind, ProtectionOverrideDto, ProtectionOverrideKind, ProtectionState,
+        StructureSignalKind, SyntheticDatasetCategory, SyntheticDatasetManifestDto,
     };
 
     #[test]
@@ -607,6 +1036,154 @@ mod tests {
             .detected_protections
             .iter()
             .any(|detection| detection.state == ProtectionState::UserProtected));
+    }
+
+    #[test]
+    fn suggests_camera_import_for_media_heavy_scans() {
+        let root = temp_path("media-import");
+        let entries = vec![
+            manifest_entry(
+                "img-1",
+                &root,
+                &root.join("IMG_0001.jpg"),
+                "IMG_0001.jpg",
+                "IMG_0001.jpg",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "img-2",
+                &root,
+                &root.join("IMG_0002.jpg"),
+                "IMG_0002.jpg",
+                "IMG_0002.jpg",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "img-3",
+                &root,
+                &root.join("IMG_0003.jpg"),
+                "IMG_0003.jpg",
+                "IMG_0003.jpg",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "img-4",
+                &root,
+                &root.join("IMG_0004.jpg"),
+                "IMG_0004.jpg",
+                "IMG_0004.jpg",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "img-5",
+                &root,
+                &root.join("IMG_0005.jpg"),
+                "IMG_0005.jpg",
+                "IMG_0005.jpg",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "vid-1",
+                &root,
+                &root.join("clip-1.mp4"),
+                "clip-1.mp4",
+                "clip-1.mp4",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "vid-2",
+                &root,
+                &root.join("clip-2.mp4"),
+                "clip-2.mp4",
+                "clip-2.mp4",
+                ManifestEntryKind::File,
+                20,
+            ),
+            manifest_entry(
+                "vid-3",
+                &root,
+                &root.join("clip-3.mp4"),
+                "clip-3.mp4",
+                "clip-3.mp4",
+                ManifestEntryKind::File,
+                20,
+            ),
+        ];
+
+        let summary = analyze_manifest("job-media", &entries, &[]);
+        assert!(summary.ai_assisted_suggestions.iter().any(|suggestion| {
+            suggestion.kind == AiAssistedSuggestionKind::PresetRecommendation
+                && suggestion.suggested_preset_id.as_deref() == Some("camera_import")
+        }));
+    }
+
+    #[test]
+    fn suggests_parent_boundary_for_multi_project_source() {
+        let root = temp_path("workspace-boundary");
+        let app_a = root.join("apps/app-a");
+        let app_b = root.join("apps/app-b");
+        let entries = vec![
+            manifest_entry(
+                "root",
+                &root,
+                &root,
+                ".",
+                "workspace",
+                ManifestEntryKind::Directory,
+                0,
+            ),
+            manifest_entry(
+                "app-a",
+                &root,
+                &app_a,
+                "apps/app-a",
+                "app-a",
+                ManifestEntryKind::Directory,
+                0,
+            ),
+            manifest_entry(
+                "app-b",
+                &root,
+                &app_b,
+                "apps/app-b",
+                "app-b",
+                ManifestEntryKind::Directory,
+                0,
+            ),
+            manifest_entry(
+                "pkg-a",
+                &root,
+                &app_a.join("package.json"),
+                "apps/app-a/package.json",
+                "package.json",
+                ManifestEntryKind::File,
+                10,
+            ),
+            manifest_entry(
+                "pkg-b",
+                &root,
+                &app_b.join("package.json"),
+                "apps/app-b/package.json",
+                "package.json",
+                ManifestEntryKind::File,
+                10,
+            ),
+        ];
+
+        let summary = analyze_manifest("job-boundary", &entries, &[]);
+        assert!(summary.ai_assisted_suggestions.iter().any(|suggestion| {
+            suggestion.kind == AiAssistedSuggestionKind::ProtectionRecommendation
+                && suggestion.suggested_protection_path.as_deref()
+                    == Some(root.to_string_lossy().as_ref())
+                && suggestion.suggested_protection_kind
+                    == Some(ProtectionOverrideKind::ParentFolder)
+        }));
     }
 
     #[test]

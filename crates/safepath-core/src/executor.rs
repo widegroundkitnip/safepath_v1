@@ -1154,6 +1154,8 @@ mod tests {
             selected_keeper_entry_id: Some("keeper-entry".to_string()),
             recommended_keeper_entry_id: Some("keeper-entry".to_string()),
             recommended_keeper_reason: Some("Newest file".to_string()),
+            recommended_keeper_confidence: Some(0.8),
+            recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
         };
 
         let mut plan = sample_plan(vec![keeper_action, duplicate_action], vec![duplicate_group]);
@@ -1215,6 +1217,8 @@ mod tests {
             selected_keeper_entry_id: Some("keeper-entry".to_string()),
             recommended_keeper_entry_id: Some("keeper-entry".to_string()),
             recommended_keeper_reason: Some("Newest file".to_string()),
+            recommended_keeper_confidence: Some(0.8),
+            recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
         };
 
         let mut plan = sample_plan(vec![keeper_action, duplicate_action], vec![duplicate_group]);
@@ -1305,6 +1309,8 @@ mod tests {
             selected_keeper_entry_id: Some("keeper-entry".to_string()),
             recommended_keeper_entry_id: Some("keeper-entry".to_string()),
             recommended_keeper_reason: Some("Newest file".to_string()),
+            recommended_keeper_confidence: Some(0.8),
+            recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
         };
 
         let mut plan = sample_plan(

@@ -1,5 +1,6 @@
 use safepath_core::{
-    planner, presets, BuildPlanRequest, PlanDto, PlanReadyEvent, PresetDefinitionDto, WorkflowPhase,
+    learner, planner, presets, BuildPlanRequest, PlanDto, PlanReadyEvent, PresetDefinitionDto,
+    WorkflowPhase,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -31,15 +32,22 @@ pub fn build_plan(
             .get_analysis_summary(&request.job_id)?
             .ok_or_else(|| "Run a scan before building a plan.".to_string())?;
         let entries = state.store.get_manifest_entries(&request.job_id)?;
+        let learner_observations = state.store.list_learner_observations(5_000)?;
         let destination_paths = state.selection_snapshot()?.destination_paths;
-        let plan = planner::build_plan(
+        let plan = planner::build_plan_with_observations(
             &request.job_id,
             &entries,
             &analysis_summary,
             &preset,
             &destination_paths,
+            &learner_observations,
         )?;
         state.store.save_plan(&plan)?;
+        let preset_selection_observation =
+            learner::build_preset_selection_observation(&plan, &analysis_summary);
+        state
+            .store
+            .save_learner_observation(&preset_selection_observation)?;
         Ok(plan)
     })();
     state.set_workflow_phase(WorkflowPhase::Idle)?;

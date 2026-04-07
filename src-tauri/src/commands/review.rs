@@ -126,6 +126,8 @@ pub fn get_duplicate_review_group_details(
         selected_keeper_entry_id: group.selected_keeper_entry_id.clone(),
         recommended_keeper_entry_id: group.recommended_keeper_entry_id.clone(),
         recommended_keeper_reason: group.recommended_keeper_reason.clone(),
+        recommended_keeper_confidence: group.recommended_keeper_confidence,
+        recommended_keeper_reason_tags: group.recommended_keeper_reason_tags.clone(),
         members,
     })
 }

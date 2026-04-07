@@ -31,6 +31,15 @@ export type ProtectionOverrideKind =
   | 'parentFolder'
   | 'preserveBoundary'
   | 'independent'
+export type AiAssistedSuggestionKind =
+  | 'sourceProfile'
+  | 'presetRecommendation'
+  | 'protectionRecommendation'
+export type SourceProfileKind =
+  | 'workspace'
+  | 'mediaImport'
+  | 'downloadsInbox'
+  | 'archiveBundle'
 
 export interface PermissionReadinessDto {
   state: PermissionReadinessState
@@ -225,10 +234,23 @@ export type SuggestionFeedbackObservationDto = {
   feedback: LearnerSuggestionFeedbackKind
 }
 
+export type PresetSelectionContextObservationDto = {
+  kind: 'presetSelectionContext'
+  observationId: string
+  observedAtEpochMs: number
+  schemaVersion: number
+  planId: string
+  jobId: string
+  presetId: string
+  sourceProfileKind: SourceProfileKind | null
+  sourceProfileConfidence: number | null
+}
+
 export type LearnerObservationDto =
   | DuplicateKeeperSelectionObservationDto
   | PlannedActionReviewDecisionObservationDto
   | SuggestionFeedbackObservationDto
+  | PresetSelectionContextObservationDto
 
 export interface RecordLearnerSuggestionFeedbackRequest {
   suggestionId: string
@@ -272,9 +294,46 @@ export type RuleReviewTuningSuggestionDto = {
   feedbackRecordedAtEpochMs: number | null
 }
 
+export type PresetAffinitySuggestionDto = {
+  kind: 'presetAffinitySuggestion'
+  suggestionId: string
+  generatedAtEpochMs: number
+  presetId: string
+  sourceProfileKind: SourceProfileKind
+  basedOnObservationCount: number
+  presetSelectionCount: number
+  presetSelectionRate: number
+  title: string
+  rationale: string
+  suggestedAdjustment: string
+  feedback: LearnerSuggestionFeedbackKind | null
+  feedbackRecordedAtEpochMs: number | null
+}
+
+export type ReviewModePreferenceSuggestionDto = {
+  kind: 'reviewModePreferenceSuggestion'
+  suggestionId: string
+  generatedAtEpochMs: number
+  presetId: string
+  basedOnObservationCount: number
+  approvalCount: number
+  rejectionCount: number
+  agreementCount: number
+  disagreementCount: number
+  conservativePreferenceRate: number
+  suggestedReviewMode: ReviewMode
+  title: string
+  rationale: string
+  suggestedAdjustment: string
+  feedback: LearnerSuggestionFeedbackKind | null
+  feedbackRecordedAtEpochMs: number | null
+}
+
 export type LearnerSuggestionDto =
   | DuplicateKeeperPolicySuggestionDto
   | RuleReviewTuningSuggestionDto
+  | PresetAffinitySuggestionDto
+  | ReviewModePreferenceSuggestionDto
 
 export type DuplicateKeeperPolicyDraftPreviewDto = {
   kind: 'duplicateKeeperPolicyDraft'
@@ -399,6 +458,19 @@ export interface ProtectionOverrideDto {
   overrideKind: ProtectionOverrideKind
 }
 
+export interface AiAssistedSuggestionDto {
+  suggestionId: string
+  kind: AiAssistedSuggestionKind
+  title: string
+  summary: string
+  confidence: number
+  reasons: string[]
+  sourceProfileKind: SourceProfileKind | null
+  suggestedPresetId: string | null
+  suggestedProtectionPath: string | null
+  suggestedProtectionKind: ProtectionOverrideKind | null
+}
+
 export interface AnalysisSummaryDto {
   jobId: string
   categoryCounts: CategoryCountDto[]
@@ -409,6 +481,7 @@ export interface AnalysisSummaryDto {
   skippedLargeSyntheticFiles: number
   detectedProtections: ProtectionDetectionDto[]
   protectionOverrides: ProtectionOverrideDto[]
+  aiAssistedSuggestions: AiAssistedSuggestionDto[]
 }
 
 export interface BuildPlanRequest {
@@ -553,6 +626,8 @@ export interface PlanDuplicateGroupDto {
   selectedKeeperEntryId: string | null
   recommendedKeeperEntryId: string | null
   recommendedKeeperReason: string | null
+  recommendedKeeperConfidence: number | null
+  recommendedKeeperReasonTags: string[]
 }
 
 export interface DuplicateReviewGroupDetailsDto {
@@ -563,6 +638,8 @@ export interface DuplicateReviewGroupDetailsDto {
   selectedKeeperEntryId: string | null
   recommendedKeeperEntryId: string | null
   recommendedKeeperReason: string | null
+  recommendedKeeperConfidence: number | null
+  recommendedKeeperReasonTags: string[]
   members: DuplicateReviewMemberDto[]
 }
 

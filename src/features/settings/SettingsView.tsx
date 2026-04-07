@@ -7,7 +7,15 @@ import type {
   LearnerSuggestionDto,
   SyntheticDatasetCategory,
 } from '../../types/app'
-import { formatBytes, formatSyntheticCategory, formatTimestamp, SYNTHETIC_CATEGORY_OPTIONS, SYNTHETIC_SIZE_OPTIONS } from '../app/shared'
+import {
+  formatBytes,
+  formatReviewMode,
+  formatSourceProfileKind,
+  formatSyntheticCategory,
+  formatTimestamp,
+  SYNTHETIC_CATEGORY_OPTIONS,
+  SYNTHETIC_SIZE_OPTIONS,
+} from '../app/shared'
 
 interface SettingsViewProps {
   status: AppStatusDto | null
@@ -356,9 +364,9 @@ export function SettingsView({
             </div>
           </header>
           <p className="status-card__summary">
-            Phase 7 now turns both duplicate-keeper corrections and repeated rule rejections into
-            reviewable suggestions. Nothing is auto-applied yet; you can only save them for later or
-            suppress them.
+            Learner suggestions now combine duplicate corrections, repeated rule rejections, preset
+            choices, and review tendencies into optional local hints. Nothing is auto-applied; you can
+            save them for later or suppress them.
           </p>
           {learnerSuggestions.length > 0 ? (
             <ul className="manifest-list">
@@ -374,11 +382,23 @@ export function SettingsView({
                         preset {suggestion.presetId} | {suggestion.disagreementCount} corrections out
                         of {suggestion.basedOnObservationCount} observations
                       </p>
-                    ) : (
+                    ) : suggestion.kind === 'ruleReviewTuningSuggestion' ? (
                       <p>
                         preset {suggestion.presetId} | rule {suggestion.ruleId} |{' '}
                         {suggestion.rejectionCount} rejects out of{' '}
                         {suggestion.basedOnObservationCount} review decisions
+                      </p>
+                    ) : suggestion.kind === 'presetAffinitySuggestion' ? (
+                      <p>
+                        preset {suggestion.presetId} | {formatSourceProfileKind(suggestion.sourceProfileKind)}{' '}
+                        profile | {suggestion.presetSelectionCount} selections out of{' '}
+                        {suggestion.basedOnObservationCount} similar scans
+                      </p>
+                    ) : (
+                      <p>
+                        preset {suggestion.presetId} | suggested {formatReviewMode(suggestion.suggestedReviewMode)}{' '}
+                        | {suggestion.rejectionCount + suggestion.disagreementCount} conservative
+                        signals out of {suggestion.basedOnObservationCount} outcomes
                       </p>
                     )}
                     <p>{suggestion.rationale}</p>
@@ -435,7 +455,11 @@ export function SettingsView({
                       ? 'saved'
                       : suggestion.kind === 'duplicateKeeperPolicySuggestion'
                         ? `${(suggestion.disagreementRate * 100).toFixed(0)}% corrected`
-                        : `${(suggestion.rejectionRate * 100).toFixed(0)}% rejected`}
+                        : suggestion.kind === 'ruleReviewTuningSuggestion'
+                          ? `${(suggestion.rejectionRate * 100).toFixed(0)}% rejected`
+                          : suggestion.kind === 'presetAffinitySuggestion'
+                            ? `${(suggestion.presetSelectionRate * 100).toFixed(0)}% selected`
+                            : formatReviewMode(suggestion.suggestedReviewMode)}
                   </span>
                 </li>
               ))}
@@ -443,7 +467,10 @@ export function SettingsView({
           ) : (
             <div className="empty-card">
               <strong>No learner suggestions yet</strong>
-              <p>Suggestions appear after repeated duplicate-keeper corrections establish a clear pattern.</p>
+              <p>
+                Suggestions appear after Safepath sees repeated local patterns in preset choice,
+                review outcomes, or duplicate corrections.
+              </p>
             </div>
           )}
         </div>

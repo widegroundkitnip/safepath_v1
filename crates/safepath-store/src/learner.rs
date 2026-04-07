@@ -388,6 +388,8 @@ mod tests {
                 selected_keeper_entry_id: Some("entry-2".to_string()),
                 recommended_keeper_entry_id: Some("entry-2".to_string()),
                 recommended_keeper_reason: Some("Newest file".to_string()),
+                recommended_keeper_confidence: Some(0.8),
+                recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
             }],
             actions: Vec::new(),
         }

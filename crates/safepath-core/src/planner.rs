@@ -9,8 +9,8 @@ use crate::rules::{describe_conditions, rule_matches};
 use crate::templates::render_destination_template;
 use crate::types::{
     ActionExplanationDto, AnalysisSummaryDto, ConflictKind, DuplicateCertainty, DuplicateGroupDto,
-    FallbackBehavior, FileCategory, ManifestEntryDto, ManifestEntryKind, PlanDto,
-    PlanDuplicateGroupDto, PlanSummaryDto, PlannedActionDto, PlannedActionKind,
+    FallbackBehavior, FileCategory, LearnerObservationDto, ManifestEntryDto, ManifestEntryKind,
+    PlanDto, PlanDuplicateGroupDto, PlanSummaryDto, PlannedActionDto, PlannedActionKind,
     PresetDefinitionDto, ProjectSafetyMode, ProtectionDetectionDto, ProtectionState, ReviewState,
     SafetyFlag,
 };
@@ -21,12 +21,44 @@ struct DuplicateMembership<'a> {
     group_id: &'a str,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct DuplicateKeeperHistorySummary {
+    observation_count: u32,
+    disagreement_rate: f32,
+}
+
+#[derive(Debug, Clone)]
+struct DuplicateKeeperRecommendation {
+    entry_id: String,
+    confidence: f32,
+    reason: String,
+    reason_tags: Vec<String>,
+}
+
 pub fn build_plan(
     job_id: &str,
     entries: &[ManifestEntryDto],
     analysis_summary: &AnalysisSummaryDto,
     preset: &PresetDefinitionDto,
     destination_roots: &[String],
+) -> Result<PlanDto, String> {
+    build_plan_with_observations(
+        job_id,
+        entries,
+        analysis_summary,
+        preset,
+        destination_roots,
+        &[],
+    )
+}
+
+pub fn build_plan_with_observations(
+    job_id: &str,
+    entries: &[ManifestEntryDto],
+    analysis_summary: &AnalysisSummaryDto,
+    preset: &PresetDefinitionDto,
+    destination_roots: &[String],
+    learner_observations: &[LearnerObservationDto],
 ) -> Result<PlanDto, String> {
     let destination_root = destination_roots.first().cloned().ok_or_else(|| {
         "Select at least one destination folder before building a plan.".to_string()
@@ -108,6 +140,8 @@ pub fn build_plan(
         &analysis_summary.likely_duplicate_groups,
         &actions,
         &entry_lookup,
+        &preset.preset_id,
+        learner_observations,
     );
     let (move_actions, review_actions, blocked_actions, skipped_actions) =
         summarize_actions(&actions);
@@ -520,11 +554,14 @@ fn build_duplicate_groups(
     analysis_groups: &[DuplicateGroupDto],
     actions: &[PlannedActionDto],
     entry_lookup: &HashMap<String, &ManifestEntryDto>,
+    preset_id: &str,
+    learner_observations: &[LearnerObservationDto],
 ) -> Vec<PlanDuplicateGroupDto> {
     let action_by_entry = actions
         .iter()
         .map(|action| (action.source_entry_id.clone(), action))
         .collect::<HashMap<_, _>>();
+    let history = duplicate_keeper_history_summary(preset_id, learner_observations);
 
     analysis_groups
         .iter()
@@ -539,16 +576,11 @@ fn build_duplicate_groups(
                 return None;
             }
 
-            let recommended_keeper_entry_id = member_actions
+            let member_entries = member_actions
                 .iter()
                 .filter_map(|action| entry_lookup.get(&action.source_entry_id).copied())
-                .max_by_key(|entry| {
-                    entry
-                        .modified_at_epoch_ms
-                        .or(entry.created_at_epoch_ms)
-                        .unwrap_or_default()
-                })
-                .map(|entry| entry.entry_id.clone());
+                .collect::<Vec<_>>();
+            let recommendation = recommend_duplicate_keeper(group, &member_entries, history);
 
             Some(PlanDuplicateGroupDto {
                 group_id: group.group_id.clone(),
@@ -564,13 +596,279 @@ fn build_duplicate_groups(
                     .map(|action| action.source_entry_id.clone())
                     .collect(),
                 selected_keeper_entry_id: None,
-                recommended_keeper_entry_id,
-                recommended_keeper_reason: Some(
-                    "Newest available file is the default keeper suggestion.".to_string(),
-                ),
+                recommended_keeper_entry_id: recommendation
+                    .as_ref()
+                    .map(|item| item.entry_id.clone()),
+                recommended_keeper_reason: recommendation.as_ref().map(|item| item.reason.clone()),
+                recommended_keeper_confidence: recommendation.as_ref().map(|item| item.confidence),
+                recommended_keeper_reason_tags: recommendation
+                    .as_ref()
+                    .map(|item| item.reason_tags.clone())
+                    .unwrap_or_default(),
             })
         })
         .collect()
+}
+
+fn recommend_duplicate_keeper(
+    group: &DuplicateGroupDto,
+    member_entries: &[&ManifestEntryDto],
+    history: DuplicateKeeperHistorySummary,
+) -> Option<DuplicateKeeperRecommendation> {
+    let mut scored = member_entries
+        .iter()
+        .map(|entry| score_duplicate_keeper_candidate(entry))
+        .collect::<Vec<_>>();
+    if scored.is_empty() {
+        return None;
+    }
+
+    let newest_timestamp = scored
+        .iter()
+        .filter_map(|candidate| candidate.best_timestamp)
+        .max()
+        .unwrap_or_default();
+    let newest_count = scored
+        .iter()
+        .filter(|candidate| candidate.best_timestamp == Some(newest_timestamp))
+        .count();
+    let clean_name_best = scored
+        .iter()
+        .map(|candidate| candidate.clean_name_score)
+        .max();
+    let path_best = scored.iter().map(|candidate| candidate.path_score).max();
+
+    for candidate in &mut scored {
+        if candidate.best_timestamp.is_some()
+            && candidate.best_timestamp == Some(newest_timestamp)
+            && newest_count == 1
+        {
+            candidate.score += 24;
+            candidate
+                .reason_tags
+                .push(match candidate.timestamp_source {
+                    Some(TimestampSource::Media) => "newest media date".to_string(),
+                    _ => "newest available timestamp".to_string(),
+                });
+        }
+
+        if clean_name_best.is_some_and(|best| best > 0 && candidate.clean_name_score == best) {
+            candidate.score += 8;
+            candidate.reason_tags.push("cleaner filename".to_string());
+        }
+
+        if path_best.is_some_and(|best| best > 0 && candidate.path_score == best) {
+            candidate.score += 6;
+            candidate
+                .reason_tags
+                .push("less temporary path".to_string());
+        }
+    }
+
+    scored.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| right.best_timestamp.cmp(&left.best_timestamp))
+            .then_with(|| left.entry.path.len().cmp(&right.entry.path.len()))
+            .then_with(|| left.entry.path.cmp(&right.entry.path))
+    });
+
+    let winner = scored.first()?;
+    let runner_up_score = scored
+        .get(1)
+        .map(|candidate| candidate.score)
+        .unwrap_or(i32::MIN);
+    let score_gap = if runner_up_score == i32::MIN {
+        20
+    } else {
+        winner.score - runner_up_score
+    };
+
+    let mut confidence = 0.44_f32;
+    let mut reason_tags = dedupe_reason_tags(winner.reason_tags.clone());
+    if newest_count == 1 && winner.best_timestamp.is_some() {
+        confidence += 0.18;
+    }
+    if score_gap >= 12 {
+        confidence += 0.12;
+    } else if score_gap >= 6 {
+        confidence += 0.06;
+    } else if score_gap <= 2 {
+        confidence -= 0.08;
+        reason_tags.push("signals are close".to_string());
+    }
+    if group.item_count == 2 {
+        confidence += 0.05;
+    }
+    if group.certainty == DuplicateCertainty::Definite {
+        confidence += 0.04;
+    }
+    if history.observation_count >= 3 {
+        if history.disagreement_rate >= 0.6 {
+            confidence -= 0.10;
+            reason_tags.push("similar suggestions are often corrected".to_string());
+        } else if history.disagreement_rate <= 0.25 {
+            confidence += 0.05;
+            reason_tags.push("similar suggestions usually match your choices".to_string());
+        }
+    }
+
+    reason_tags = dedupe_reason_tags(reason_tags);
+    confidence = confidence.clamp(0.28, 0.92);
+    let reason = if reason_tags.is_empty() {
+        "Signals are close, so this remains a weak default suggestion.".to_string()
+    } else {
+        format!("Suggested because of {}.", join_reason_tags(&reason_tags))
+    };
+
+    Some(DuplicateKeeperRecommendation {
+        entry_id: winner.entry.entry_id.clone(),
+        confidence,
+        reason,
+        reason_tags,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimestampSource {
+    Media,
+    Modified,
+    Created,
+}
+
+#[derive(Debug, Clone)]
+struct ScoredDuplicateKeeperCandidate<'a> {
+    entry: &'a ManifestEntryDto,
+    score: i32,
+    best_timestamp: Option<i64>,
+    timestamp_source: Option<TimestampSource>,
+    clean_name_score: i32,
+    path_score: i32,
+    reason_tags: Vec<String>,
+}
+
+fn score_duplicate_keeper_candidate<'a>(
+    entry: &'a ManifestEntryDto,
+) -> ScoredDuplicateKeeperCandidate<'a> {
+    let (best_timestamp, timestamp_source) = preferred_keeper_timestamp(entry);
+    let clean_name_score = duplicate_name_quality_score(&entry.name);
+    let path_score = duplicate_path_quality_score(&entry.path);
+
+    ScoredDuplicateKeeperCandidate {
+        entry,
+        score: 0,
+        best_timestamp,
+        timestamp_source,
+        clean_name_score,
+        path_score,
+        reason_tags: Vec::new(),
+    }
+}
+
+fn preferred_keeper_timestamp(entry: &ManifestEntryDto) -> (Option<i64>, Option<TimestampSource>) {
+    if let Some(timestamp) = entry.media_date_epoch_ms.filter(|value| *value > 0) {
+        return (Some(timestamp), Some(TimestampSource::Media));
+    }
+    if let Some(timestamp) = entry.modified_at_epoch_ms.filter(|value| *value > 0) {
+        return (Some(timestamp), Some(TimestampSource::Modified));
+    }
+    if let Some(timestamp) = entry.created_at_epoch_ms.filter(|value| *value > 0) {
+        return (Some(timestamp), Some(TimestampSource::Created));
+    }
+    (None, None)
+}
+
+fn duplicate_name_quality_score(name: &str) -> i32 {
+    let lower = name.to_ascii_lowercase();
+    let mut score = 1;
+    for marker in ["copy", "duplicate", "edited", "export", "final", "backup"] {
+        if lower.contains(marker) {
+            score -= 2;
+        }
+    }
+    score
+}
+
+fn duplicate_path_quality_score(path: &str) -> i32 {
+    let lower = path.to_ascii_lowercase();
+    let mut score = 0;
+    for marker in ["/dcim/", "/photos/", "/pictures/", "/camera/", "/original"] {
+        if lower.contains(marker) {
+            score += 2;
+        }
+    }
+    for marker in [
+        "/downloads/",
+        "/desktop/",
+        "/trash/",
+        "/holding/",
+        "/backup/",
+        "/archive/",
+        "/tmp/",
+    ] {
+        if lower.contains(marker) {
+            score -= 3;
+        }
+    }
+    score
+}
+
+fn duplicate_keeper_history_summary(
+    preset_id: &str,
+    learner_observations: &[LearnerObservationDto],
+) -> DuplicateKeeperHistorySummary {
+    let mut observation_count = 0_u32;
+    let mut disagreement_count = 0_u32;
+
+    for observation in learner_observations {
+        let LearnerObservationDto::DuplicateKeeperSelection {
+            preset_id: observation_preset_id,
+            user_agreed_with_recommendation,
+            ..
+        } = observation
+        else {
+            continue;
+        };
+
+        if observation_preset_id != preset_id {
+            continue;
+        }
+
+        observation_count += 1;
+        if !user_agreed_with_recommendation {
+            disagreement_count += 1;
+        }
+    }
+
+    if observation_count == 0 {
+        return DuplicateKeeperHistorySummary::default();
+    }
+
+    DuplicateKeeperHistorySummary {
+        observation_count,
+        disagreement_rate: disagreement_count as f32 / observation_count as f32,
+    }
+}
+
+fn dedupe_reason_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+    for tag in tags {
+        if seen.insert(tag.clone()) {
+            deduped.push(tag);
+        }
+    }
+    deduped
+}
+
+fn join_reason_tags(tags: &[String]) -> String {
+    match tags {
+        [] => "available signals".to_string(),
+        [only] => only.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {}", rest.join(", "), last),
+    }
 }
 
 fn strongest_protection<'a>(
@@ -673,7 +971,8 @@ mod tests {
     use super::build_plan;
     use crate::presets::get_preset;
     use crate::types::{
-        AnalysisSummaryDto, ChecksumMode, DuplicatePolicy, FallbackBehavior, FileCategory,
+        AnalysisSummaryDto, ChecksumMode, DuplicateCertainty, DuplicateGroupDto,
+        DuplicateMemberDto, DuplicatePolicy, FallbackBehavior, FileCategory, LearnerObservationDto,
         ManifestEntryDto, ManifestEntryKind, PlanOptionsDto, PlannedActionKind,
         PresetDefinitionDto, ProjectSafetyMode, ProtectionDetectionDto, ProtectionOverrideDto,
         ProtectionState, ReviewMode, ReviewState, RuleConditionDto, RuleDto, RuleSetDto,
@@ -744,6 +1043,153 @@ mod tests {
         assert_eq!(plan.summary.review_actions, 1);
         assert_eq!(plan.actions[0].action_kind, PlannedActionKind::Review);
         assert_eq!(plan.actions[0].review_state, ReviewState::NeedsChoice);
+    }
+
+    #[test]
+    fn duplicate_keeper_recommendation_uses_reason_tags_and_confidence() {
+        let preset = get_preset("duplicate_review").expect("preset");
+        let mut canonical = manifest_entry(
+            "entry-canonical",
+            "/source/DCIM/IMG_0001.JPG",
+            "IMG_0001.JPG",
+            Some("JPG"),
+            1_704_067_200_000,
+        );
+        canonical.media_date_epoch_ms = Some(1_709_337_600_000);
+
+        let mut downloads_copy = manifest_entry(
+            "entry-copy",
+            "/source/Downloads/IMG_0001 copy.JPG",
+            "IMG_0001 copy.JPG",
+            Some("JPG"),
+            1_704_153_600_000,
+        );
+        downloads_copy.media_date_epoch_ms = Some(1_707_091_200_000);
+
+        let analysis = AnalysisSummaryDto {
+            likely_duplicate_groups: vec![DuplicateGroupDto {
+                group_id: "group-dup".to_string(),
+                certainty: DuplicateCertainty::Definite,
+                representative_name: "img_0001".to_string(),
+                size_bytes: 42,
+                item_count: 2,
+                members: vec![
+                    DuplicateMemberDto {
+                        entry_id: "entry-canonical".to_string(),
+                        path: canonical.path.clone(),
+                    },
+                    DuplicateMemberDto {
+                        entry_id: "entry-copy".to_string(),
+                        path: downloads_copy.path.clone(),
+                    },
+                ],
+            }],
+            ..empty_analysis("job-dup")
+        };
+
+        let plan = build_plan(
+            "job-dup",
+            &[canonical, downloads_copy],
+            &analysis,
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan");
+
+        assert_eq!(
+            plan.duplicate_groups[0]
+                .recommended_keeper_entry_id
+                .as_deref(),
+            Some("entry-canonical")
+        );
+        assert!(plan.duplicate_groups[0]
+            .recommended_keeper_reason_tags
+            .contains(&"newest media date".to_string()));
+        assert!(plan.duplicate_groups[0]
+            .recommended_keeper_reason_tags
+            .contains(&"less temporary path".to_string()));
+        assert!(plan.duplicate_groups[0]
+            .recommended_keeper_confidence
+            .is_some_and(|confidence| confidence >= 0.6));
+    }
+
+    #[test]
+    fn duplicate_keeper_confidence_is_reduced_when_history_often_disagrees() {
+        let preset = get_preset("duplicate_review").expect("preset");
+        let mut canonical = manifest_entry(
+            "entry-canonical",
+            "/source/DCIM/IMG_0001.JPG",
+            "IMG_0001.JPG",
+            Some("JPG"),
+            1_704_067_200_000,
+        );
+        canonical.media_date_epoch_ms = Some(1_709_337_600_000);
+
+        let mut downloads_copy = manifest_entry(
+            "entry-copy",
+            "/source/Downloads/IMG_0001 copy.JPG",
+            "IMG_0001 copy.JPG",
+            Some("JPG"),
+            1_704_153_600_000,
+        );
+        downloads_copy.media_date_epoch_ms = Some(1_707_091_200_000);
+
+        let analysis = AnalysisSummaryDto {
+            likely_duplicate_groups: vec![DuplicateGroupDto {
+                group_id: "group-dup".to_string(),
+                certainty: DuplicateCertainty::Definite,
+                representative_name: "img_0001".to_string(),
+                size_bytes: 42,
+                item_count: 2,
+                members: vec![
+                    DuplicateMemberDto {
+                        entry_id: "entry-canonical".to_string(),
+                        path: canonical.path.clone(),
+                    },
+                    DuplicateMemberDto {
+                        entry_id: "entry-copy".to_string(),
+                        path: downloads_copy.path.clone(),
+                    },
+                ],
+            }],
+            ..empty_analysis("job-dup-history")
+        };
+
+        let without_history = build_plan(
+            "job-dup-history",
+            &[canonical.clone(), downloads_copy.clone()],
+            &analysis,
+            &preset,
+            &["/dest".to_string()],
+        )
+        .expect("build plan without history");
+
+        let learner_observations = vec![
+            duplicate_keeper_observation("obs-1", "duplicate_review", true),
+            duplicate_keeper_observation("obs-2", "duplicate_review", false),
+            duplicate_keeper_observation("obs-3", "duplicate_review", false),
+        ];
+        let with_history = super::build_plan_with_observations(
+            "job-dup-history",
+            &[canonical, downloads_copy],
+            &analysis,
+            &preset,
+            &["/dest".to_string()],
+            &learner_observations,
+        )
+        .expect("build plan with history");
+
+        assert!(
+            with_history.duplicate_groups[0]
+                .recommended_keeper_confidence
+                .unwrap_or_default()
+                < without_history.duplicate_groups[0]
+                    .recommended_keeper_confidence
+                    .unwrap_or_default()
+        );
+        assert!(with_history.duplicate_groups[0]
+            .recommended_keeper_reason_tags
+            .contains(&"similar suggestions are often corrected".to_string()));
     }
 
     #[test]
@@ -1039,6 +1485,7 @@ mod tests {
             skipped_large_synthetic_files: 0,
             detected_protections: Vec::new(),
             protection_overrides: Vec::<ProtectionOverrideDto>::new(),
+            ai_assisted_suggestions: Vec::new(),
         }
     }
 
@@ -1092,6 +1539,36 @@ mod tests {
                 project_safety_mode: ProjectSafetyMode::On,
                 fallback_behavior: FallbackBehavior::Skip,
             },
+        }
+    }
+
+    fn duplicate_keeper_observation(
+        observation_id: &str,
+        preset_id: &str,
+        user_agreed_with_recommendation: bool,
+    ) -> LearnerObservationDto {
+        LearnerObservationDto::DuplicateKeeperSelection {
+            observation_id: observation_id.to_string(),
+            observed_at_epoch_ms: 1,
+            schema_version: 1,
+            plan_id: "plan-1".to_string(),
+            job_id: "job-1".to_string(),
+            preset_id: preset_id.to_string(),
+            related_session_id: None,
+            group_id: "group-1".to_string(),
+            certainty: DuplicateCertainty::Definite,
+            representative_name: "photo.jpg".to_string(),
+            item_count: 2,
+            member_entry_ids: vec!["entry-canonical".to_string(), "entry-copy".to_string()],
+            member_action_ids: vec!["action-1".to_string(), "action-2".to_string()],
+            recommended_keeper_entry_id: Some("entry-canonical".to_string()),
+            recommended_keeper_reason: Some("Suggested because of newest media date.".to_string()),
+            selected_keeper_entry_id: if user_agreed_with_recommendation {
+                "entry-canonical".to_string()
+            } else {
+                "entry-copy".to_string()
+            },
+            user_agreed_with_recommendation,
         }
     }
 }

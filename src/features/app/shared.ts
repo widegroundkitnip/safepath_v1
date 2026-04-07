@@ -1,8 +1,11 @@
 import type {
+  AiAssistedSuggestionKind,
   LearnerObservationDto,
   MediaDateSource,
   PlanDto,
   PlannedActionDto,
+  ReviewMode,
+  SourceProfileKind,
   SyntheticDatasetCategory,
 } from '../../types/app'
 
@@ -32,6 +35,54 @@ export function formatMediaDateSource(source: MediaDateSource | null) {
     default:
       return 'Not recorded'
   }
+}
+
+export function formatAiAssistedSuggestionKind(kind: AiAssistedSuggestionKind) {
+  switch (kind) {
+    case 'sourceProfile':
+      return 'source profile'
+    case 'presetRecommendation':
+      return 'preset recommendation'
+    case 'protectionRecommendation':
+      return 'protection suggestion'
+    default:
+      return kind
+  }
+}
+
+export function formatSourceProfileKind(kind: SourceProfileKind | null) {
+  switch (kind) {
+    case 'workspace':
+      return 'workspace-like'
+    case 'mediaImport':
+      return 'media import'
+    case 'downloadsInbox':
+      return 'downloads-style inbox'
+    case 'archiveBundle':
+      return 'archive-heavy'
+    default:
+      return 'unknown'
+  }
+}
+
+export function formatReviewMode(mode: ReviewMode) {
+  switch (mode) {
+    case 'strict':
+      return 'conservative review'
+    case 'duplicateFirst':
+      return 'duplicate-first review'
+    case 'standard':
+    default:
+      return 'standard review'
+  }
+}
+
+export function formatConfidence(confidence: number) {
+  if (!Number.isFinite(confidence)) {
+    return 'Unknown confidence'
+  }
+
+  return `${Math.round(confidence * 100)}% confidence`
 }
 
 export function formatBytes(bytes: number) {

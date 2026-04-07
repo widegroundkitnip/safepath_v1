@@ -65,6 +65,7 @@ import type {
   PreflightIssueDto,
   PresetDefinitionDto,
   ProtectionDetectionDto,
+  ProtectionOverrideKind,
   ReviewDecision,
   ScanJobStatusDto,
   ScanProgressEvent,
@@ -77,9 +78,13 @@ import {
   countBucket,
   EXECUTION_RECORD_PAGE_SIZE,
   type DestinationFolderPreview,
+  formatAiAssistedSuggestionKind,
   formatBytes,
+  formatConfidence,
   formatExecutionStrategy,
   formatMediaDateSource,
+  formatReviewMode,
+  formatSourceProfileKind,
   formatTimestamp,
   HISTORY_PAGE_SIZE,
   HISTORY_SESSION_RECORD_PAGE_SIZE,
@@ -280,6 +285,37 @@ function App() {
   const learnerSuggestionFeedbackEvents = useMemo(
     () => learnerObservations.filter(isSuggestionFeedbackObservation),
     [learnerObservations],
+  )
+  const currentSourceProfileKind = useMemo(
+    () =>
+      analysisSummary?.aiAssistedSuggestions.find((suggestion) => suggestion.kind === 'sourceProfile')
+        ?.sourceProfileKind ?? null,
+    [analysisSummary?.aiAssistedSuggestions],
+  )
+  const workflowPreferenceSuggestions = useMemo(
+    () =>
+      learnerSuggestions.filter(
+        (
+          suggestion,
+        ): suggestion is Extract<
+          LearnerSuggestionDto,
+          { kind: 'presetAffinitySuggestion' | 'reviewModePreferenceSuggestion' }
+        > => {
+        if (
+          suggestion.kind === 'presetAffinitySuggestion' &&
+          currentSourceProfileKind &&
+          suggestion.sourceProfileKind === currentSourceProfileKind
+        ) {
+          return true
+        }
+
+        return (
+          suggestion.kind === 'reviewModePreferenceSuggestion' &&
+          suggestion.presetId === selectedPresetId
+        )
+        },
+      ),
+    [currentSourceProfileKind, learnerSuggestions, selectedPresetId],
   )
 
   async function loadLearnerInsights() {
@@ -1067,9 +1103,9 @@ function App() {
     }
   }
 
-  async function handleProtectPath(path: string) {
+  async function applyProtectionOverride(path: string, overrideKind: ProtectionOverrideKind) {
     try {
-      await setProtectionOverride(path, 'userProtected')
+      await setProtectionOverride(path, overrideKind)
       if (scanStatus?.jobId) {
         const summary = await getAnalysisSummary(scanStatus.jobId)
         setAnalysisSummary(summary)
@@ -1079,8 +1115,31 @@ function App() {
     }
   }
 
+  async function handleProtectPath(path: string) {
+    await applyProtectionOverride(path, 'userProtected')
+  }
+
+  async function handleApplyStructureProtection(path: string, overrideKind: ProtectionOverrideKind) {
+    await applyProtectionOverride(path, overrideKind)
+  }
+
   function isOverridden(path: string) {
     return analysisSummary?.protectionOverrides.some((item) => item.path === path) ?? false
+  }
+
+  function protectionSuggestionLabel(overrideKind: ProtectionOverrideKind) {
+    switch (overrideKind) {
+      case 'projectRoot':
+        return 'Mark project root'
+      case 'parentFolder':
+        return 'Mark parent boundary'
+      case 'preserveBoundary':
+        return 'Preserve boundary'
+      case 'independent':
+        return 'Mark independent'
+      default:
+        return 'Mark protected'
+    }
   }
 
   async function handleRefreshPlan() {
@@ -1585,6 +1644,133 @@ function App() {
                       reading through sparse multi-GB or multi-TB test data.
                     </p>
                   ) : null}
+                </div>
+              ) : null}
+              {analysisSummary?.aiAssistedSuggestions.length ? (
+                <div className="status-card">
+                  <header className="status-card__header">
+                    <div>
+                      <p className="status-card__eyebrow">AI-assisted suggestions</p>
+                      <h3>{analysisSummary.aiAssistedSuggestions.length} reviewable hints</h3>
+                    </div>
+                  </header>
+                  <p className="status-card__summary">
+                    These suggestions are local, explainable, and optional. Safepath will not apply
+                    them unless you choose to.
+                  </p>
+                  <ul className="manifest-list">
+                    {analysisSummary.aiAssistedSuggestions.map((suggestion) => (
+                      <li
+                        key={suggestion.suggestionId}
+                        className="manifest-list__item manifest-list__item--stacked"
+                      >
+                        <div>
+                          <strong>{suggestion.title}</strong>
+                          <p>{suggestion.summary}</p>
+                          <p>
+                            {formatAiAssistedSuggestionKind(suggestion.kind)} |{' '}
+                            {formatConfidence(suggestion.confidence)}
+                          </p>
+                          {suggestion.reasons.length > 0 ? (
+                            <p>Why: {suggestion.reasons.join(' | ')}</p>
+                          ) : null}
+                        </div>
+                        <div className="button-row button-row--compact">
+                          {suggestion.suggestedPresetId ? (
+                            <button
+                              className="action-button action-button--secondary"
+                              disabled={selectedPresetId === suggestion.suggestedPresetId}
+                              onClick={() => setSelectedPresetId(suggestion.suggestedPresetId ?? '')}
+                              type="button"
+                            >
+                              {selectedPresetId === suggestion.suggestedPresetId
+                                ? 'Preset selected'
+                                : `Use ${
+                                    presets.find(
+                                      (preset) => preset.presetId === suggestion.suggestedPresetId,
+                                    )?.name ?? 'suggested preset'
+                                  }`}
+                            </button>
+                          ) : null}
+                          {suggestion.suggestedProtectionPath && suggestion.suggestedProtectionKind ? (
+                            <button
+                              className="action-button action-button--secondary"
+                              disabled={isOverridden(suggestion.suggestedProtectionPath)}
+                              onClick={() =>
+                                handleApplyStructureProtection(
+                                  suggestion.suggestedProtectionPath ?? '',
+                                  suggestion.suggestedProtectionKind ?? 'userProtected',
+                                )
+                              }
+                              type="button"
+                            >
+                              {isOverridden(suggestion.suggestedProtectionPath)
+                                ? 'Boundary set'
+                                : protectionSuggestionLabel(suggestion.suggestedProtectionKind)}
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {analysisSummary && workflowPreferenceSuggestions.length > 0 ? (
+                <div className="status-card">
+                  <header className="status-card__header">
+                    <div>
+                      <p className="status-card__eyebrow">Preference hints</p>
+                      <h3>{workflowPreferenceSuggestions.length} local suggestions</h3>
+                    </div>
+                  </header>
+                  <p className="status-card__summary">
+                    These hints come from local preset choices and review history. They stay optional,
+                    and you can suppress them from Settings at any time.
+                  </p>
+                  <ul className="manifest-list">
+                    {workflowPreferenceSuggestions.map((suggestion) => (
+                      <li
+                        key={suggestion.suggestionId}
+                        className="manifest-list__item manifest-list__item--stacked"
+                      >
+                        <div>
+                          <strong>{suggestion.title}</strong>
+                          <p>{suggestion.rationale}</p>
+                          <p>{suggestion.suggestedAdjustment}</p>
+                          {suggestion.kind === 'presetAffinitySuggestion' ? (
+                            <p>
+                              {formatSourceProfileKind(suggestion.sourceProfileKind)} profile |{' '}
+                              {Math.round(suggestion.presetSelectionRate * 100)}% of{' '}
+                              {suggestion.basedOnObservationCount} similar scans
+                            </p>
+                          ) : (
+                            <p>
+                              Suggested mode: {formatReviewMode(suggestion.suggestedReviewMode)} |{' '}
+                              {Math.round(suggestion.conservativePreferenceRate * 100)}%
+                              {' '}conservative tendency
+                            </p>
+                          )}
+                        </div>
+                        <div className="button-row button-row--compact">
+                          {suggestion.kind === 'presetAffinitySuggestion' ? (
+                            <button
+                              className="action-button action-button--secondary"
+                              disabled={selectedPresetId === suggestion.presetId}
+                              onClick={() => setSelectedPresetId(suggestion.presetId)}
+                              type="button"
+                            >
+                              {selectedPresetId === suggestion.presetId
+                                ? 'Preset selected'
+                                : `Use ${
+                                    presets.find((preset) => preset.presetId === suggestion.presetId)
+                                      ?.name ?? 'suggested preset'
+                                  }`}
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
               {analysisSummary && presets.length > 0 ? (
@@ -2143,6 +2329,12 @@ function App() {
                               group.recommendedKeeperEntryId ??
                               'Select a keeper'}
                           </p>
+                          {group.recommendedKeeperConfidence !== null ? (
+                            <p>{formatConfidence(group.recommendedKeeperConfidence)}</p>
+                          ) : null}
+                          {group.recommendedKeeperReasonTags.length > 0 ? (
+                            <p>Why: {group.recommendedKeeperReasonTags.join(' | ')}</p>
+                          ) : null}
                           {group.recommendedKeeperReason ? (
                             <p>{group.recommendedKeeperReason}</p>
                           ) : null}
@@ -2201,6 +2393,16 @@ function App() {
                           Suggested keeper: {selectedDuplicateGroup.recommendedKeeperEntryId ?? 'none yet'}.
                           {' '}
                           {selectedDuplicateGroup.recommendedKeeperReason}
+                        </p>
+                      ) : null}
+                      {selectedDuplicateGroup.recommendedKeeperConfidence !== null ? (
+                        <p className="status-card__summary">
+                          {formatConfidence(selectedDuplicateGroup.recommendedKeeperConfidence)}
+                        </p>
+                      ) : null}
+                      {selectedDuplicateGroup.recommendedKeeperReasonTags.length > 0 ? (
+                        <p className="status-card__summary">
+                          Reason tags: {selectedDuplicateGroup.recommendedKeeperReasonTags.join(' | ')}
                         </p>
                       ) : null}
                       {isLoadingDuplicateGroupDetails ? (

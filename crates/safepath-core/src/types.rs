@@ -246,6 +246,16 @@ pub enum LearnerObservationDto {
         preset_id: String,
         feedback: LearnerSuggestionFeedbackKind,
     },
+    PresetSelectionContext {
+        observation_id: String,
+        observed_at_epoch_ms: i64,
+        schema_version: u32,
+        plan_id: String,
+        job_id: String,
+        preset_id: String,
+        source_profile_kind: Option<SourceProfileKind>,
+        source_profile_confidence: Option<f32>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -295,6 +305,37 @@ pub enum LearnerSuggestionDto {
         rationale: String,
         suggested_adjustment: String,
         sample_source_paths: Vec<String>,
+        feedback: Option<LearnerSuggestionFeedbackKind>,
+        feedback_recorded_at_epoch_ms: Option<i64>,
+    },
+    PresetAffinitySuggestion {
+        suggestion_id: String,
+        generated_at_epoch_ms: i64,
+        preset_id: String,
+        source_profile_kind: SourceProfileKind,
+        based_on_observation_count: u32,
+        preset_selection_count: u32,
+        preset_selection_rate: f32,
+        title: String,
+        rationale: String,
+        suggested_adjustment: String,
+        feedback: Option<LearnerSuggestionFeedbackKind>,
+        feedback_recorded_at_epoch_ms: Option<i64>,
+    },
+    ReviewModePreferenceSuggestion {
+        suggestion_id: String,
+        generated_at_epoch_ms: i64,
+        preset_id: String,
+        based_on_observation_count: u32,
+        approval_count: u32,
+        rejection_count: u32,
+        agreement_count: u32,
+        disagreement_count: u32,
+        conservative_preference_rate: f32,
+        suggested_review_mode: ReviewMode,
+        title: String,
+        rationale: String,
+        suggested_adjustment: String,
         feedback: Option<LearnerSuggestionFeedbackKind>,
         feedback_recorded_at_epoch_ms: Option<i64>,
     },
@@ -384,6 +425,8 @@ pub struct AnalysisSummaryDto {
     pub skipped_large_synthetic_files: u64,
     pub detected_protections: Vec<ProtectionDetectionDto>,
     pub protection_overrides: Vec<ProtectionOverrideDto>,
+    #[serde(default)]
+    pub ai_assisted_suggestions: Vec<AiAssistedSuggestionDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -548,6 +591,9 @@ pub struct PlanDuplicateGroupDto {
     pub selected_keeper_entry_id: Option<String>,
     pub recommended_keeper_entry_id: Option<String>,
     pub recommended_keeper_reason: Option<String>,
+    pub recommended_keeper_confidence: Option<f32>,
+    #[serde(default)]
+    pub recommended_keeper_reason_tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -560,6 +606,9 @@ pub struct DuplicateReviewGroupDetailsDto {
     pub selected_keeper_entry_id: Option<String>,
     pub recommended_keeper_entry_id: Option<String>,
     pub recommended_keeper_reason: Option<String>,
+    pub recommended_keeper_confidence: Option<f32>,
+    #[serde(default)]
+    pub recommended_keeper_reason_tags: Vec<String>,
     pub members: Vec<DuplicateReviewMemberDto>,
 }
 
@@ -890,7 +939,40 @@ pub struct ProtectionOverrideDto {
     pub override_kind: ProtectionOverrideKind,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAssistedSuggestionDto {
+    pub suggestion_id: String,
+    pub kind: AiAssistedSuggestionKind,
+    pub title: String,
+    pub summary: String,
+    pub confidence: f32,
+    pub reasons: Vec<String>,
+    #[serde(default)]
+    pub source_profile_kind: Option<SourceProfileKind>,
+    pub suggested_preset_id: Option<String>,
+    pub suggested_protection_path: Option<String>,
+    pub suggested_protection_kind: Option<ProtectionOverrideKind>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AiAssistedSuggestionKind {
+    SourceProfile,
+    PresetRecommendation,
+    ProtectionRecommendation,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum SourceProfileKind {
+    Workspace,
+    MediaImport,
+    DownloadsInbox,
+    ArchiveBundle,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ProtectionOverrideKind {
     UserProtected,

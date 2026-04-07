@@ -12,12 +12,12 @@ pub mod test_data;
 pub mod types;
 
 pub use types::{
-    ActionExplanationDto, ActionRecordDto, ActionRecordStatus, AnalysisProgressEvent,
-    AnalysisStage, AnalysisSummaryDto, AppStatusDto, BoundaryKind, BuildPlanRequest, ChecksumMode,
-    ConflictKind, DuplicateCertainty, DuplicateGroupDto, DuplicatePolicy,
-    DuplicateReviewGroupDetailsDto, DuplicateReviewMemberDto, ExecutePlanRequest,
-    ExecutionCompletedEvent, ExecutionOperationKind, ExecutionProgressEvent, ExecutionSessionDto,
-    ExecutionSessionStatus, ExecutionStrategy, FallbackBehavior, FileCategory,
+    ActionExplanationDto, ActionRecordDto, ActionRecordStatus, AiAssistedSuggestionDto,
+    AiAssistedSuggestionKind, AnalysisProgressEvent, AnalysisStage, AnalysisSummaryDto,
+    AppStatusDto, BoundaryKind, BuildPlanRequest, ChecksumMode, ConflictKind, DuplicateCertainty,
+    DuplicateGroupDto, DuplicatePolicy, DuplicateReviewGroupDetailsDto, DuplicateReviewMemberDto,
+    ExecutePlanRequest, ExecutionCompletedEvent, ExecutionOperationKind, ExecutionProgressEvent,
+    ExecutionSessionDto, ExecutionSessionStatus, ExecutionStrategy, FallbackBehavior, FileCategory,
     GenerateSyntheticDatasetRequest, GenerateSyntheticDatasetResultDto, HistoryEntryDto,
     HistoryPageDto, HistorySessionSummaryDto, LearnerDraftPreviewDto, LearnerObservationDto,
     LearnerSuggestionDto, LearnerSuggestionFeedbackKind, ManifestEntryDto, ManifestEntryKind,
@@ -29,9 +29,9 @@ pub use types::{
     ReviewDecision, ReviewMode, ReviewState, RuleConditionDto, RuleDto, RuleSetDto, SafetyFlag,
     SaveLearnerDraftPreviewRequest, ScanJobState, ScanJobStatusDto, ScanPageReadyEvent,
     ScanProgressEvent, ScanStartedEvent, SetDuplicateKeeperRequest, StartScanRequest,
-    StructureSignalDto, StructureSignalKind, SyntheticCategoryCountDto, SyntheticDatasetCategory,
-    SyntheticDatasetManifestDto, UndoRecordRequest, UndoSessionRequest, UpdateReviewStateRequest,
-    WorkflowPhase,
+    SourceProfileKind, StructureSignalDto, StructureSignalKind, SyntheticCategoryCountDto,
+    SyntheticDatasetCategory, SyntheticDatasetManifestDto, UndoRecordRequest, UndoSessionRequest,
+    UpdateReviewStateRequest, WorkflowPhase,
 };
 
 pub fn build_app_status(
