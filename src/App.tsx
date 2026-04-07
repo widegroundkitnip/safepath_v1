@@ -73,15 +73,20 @@ import type {
 } from './types/app'
 import {
   actionMatchesBucket,
+  aiSuggestionActionLabel,
   ANALYSIS_DUPLICATE_PAGE_SIZE,
   buildDestinationImpactPreview,
   countBucket,
+  describeAiSuggestion,
+  describeLearnerSuggestion,
   EXECUTION_RECORD_PAGE_SIZE,
   type DestinationFolderPreview,
   formatAiAssistedSuggestionKind,
   formatBytes,
   formatConfidence,
+  formatConfidenceBand,
   formatExecutionStrategy,
+  learnerSuggestionEvidence,
   formatMediaDateSource,
   formatReviewMode,
   formatSourceProfileKind,
@@ -98,6 +103,7 @@ import {
   REVIEW_ACTION_PAGE_SIZE,
   REVIEW_GROUP_PAGE_SIZE,
   type ReviewBucket,
+  summarizeAiEvidence,
   SYNTHETIC_SIZE_OPTIONS,
 } from './features/app/shared'
 
@@ -1127,21 +1133,6 @@ function App() {
     return analysisSummary?.protectionOverrides.some((item) => item.path === path) ?? false
   }
 
-  function protectionSuggestionLabel(overrideKind: ProtectionOverrideKind) {
-    switch (overrideKind) {
-      case 'projectRoot':
-        return 'Mark project root'
-      case 'parentFolder':
-        return 'Mark parent boundary'
-      case 'preserveBoundary':
-        return 'Preserve boundary'
-      case 'independent':
-        return 'Mark independent'
-      default:
-        return 'Mark protected'
-    }
-  }
-
   async function handleRefreshPlan() {
     if (!plan?.planId) {
       return
@@ -1422,6 +1413,7 @@ function App() {
       {activeView === 'settings' ? (
         <SettingsView
           status={status}
+          presets={presets}
           draftDestinationPath={draftDestinationPath}
           syntheticOutputRoot={syntheticOutputRoot}
           syntheticDatasetName={syntheticDatasetName}
@@ -1666,14 +1658,14 @@ function App() {
                       >
                         <div>
                           <strong>{suggestion.title}</strong>
-                          <p>{suggestion.summary}</p>
+                          <p>{describeAiSuggestion(suggestion, presets)}</p>
                           <p>
                             {formatAiAssistedSuggestionKind(suggestion.kind)} |{' '}
-                            {formatConfidence(suggestion.confidence)}
+                            {formatConfidence(suggestion.confidence)} |{' '}
+                            {formatConfidenceBand(suggestion.confidence)}
                           </p>
-                          {suggestion.reasons.length > 0 ? (
-                            <p>Why: {suggestion.reasons.join(' | ')}</p>
-                          ) : null}
+                          <p>{suggestion.summary}</p>
+                          {summarizeAiEvidence(suggestion) ? <p>{summarizeAiEvidence(suggestion)}</p> : null}
                         </div>
                         <div className="button-row button-row--compact">
                           {suggestion.suggestedPresetId ? (
@@ -1684,12 +1676,8 @@ function App() {
                               type="button"
                             >
                               {selectedPresetId === suggestion.suggestedPresetId
-                                ? 'Preset selected'
-                                : `Use ${
-                                    presets.find(
-                                      (preset) => preset.presetId === suggestion.suggestedPresetId,
-                                    )?.name ?? 'suggested preset'
-                                  }`}
+                                ? 'Using this preset'
+                                : aiSuggestionActionLabel(suggestion, presets)}
                             </button>
                           ) : null}
                           {suggestion.suggestedProtectionPath && suggestion.suggestedProtectionKind ? (
@@ -1705,8 +1693,8 @@ function App() {
                               type="button"
                             >
                               {isOverridden(suggestion.suggestedProtectionPath)
-                                ? 'Boundary set'
-                                : protectionSuggestionLabel(suggestion.suggestedProtectionKind)}
+                                ? 'Boundary confirmed'
+                                : aiSuggestionActionLabel(suggestion, presets)}
                             </button>
                           ) : null}
                         </div>
@@ -1735,8 +1723,12 @@ function App() {
                       >
                         <div>
                           <strong>{suggestion.title}</strong>
+                          <p>{describeLearnerSuggestion(suggestion, presets)}</p>
                           <p>{suggestion.rationale}</p>
                           <p>{suggestion.suggestedAdjustment}</p>
+                          {learnerSuggestionEvidence(suggestion, presets) ? (
+                            <p>{learnerSuggestionEvidence(suggestion, presets)}</p>
+                          ) : null}
                           {suggestion.kind === 'presetAffinitySuggestion' ? (
                             <p>
                               {formatSourceProfileKind(suggestion.sourceProfileKind)} profile |{' '}
@@ -1760,11 +1752,11 @@ function App() {
                               type="button"
                             >
                               {selectedPresetId === suggestion.presetId
-                                ? 'Preset selected'
+                                ? 'Using this preset'
                                 : `Use ${
                                     presets.find((preset) => preset.presetId === suggestion.presetId)
                                       ?.name ?? 'suggested preset'
-                                  }`}
+                                  } as starting preset`}
                             </button>
                           ) : null}
                         </div>

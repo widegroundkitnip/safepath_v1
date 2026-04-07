@@ -1,9 +1,12 @@
 import type {
   AiAssistedSuggestionKind,
+  AiAssistedSuggestionDto,
   LearnerObservationDto,
+  LearnerSuggestionDto,
   MediaDateSource,
   PlanDto,
   PlannedActionDto,
+  PresetDefinitionDto,
   ReviewMode,
   SourceProfileKind,
   SyntheticDatasetCategory,
@@ -83,6 +86,143 @@ export function formatConfidence(confidence: number) {
   }
 
   return `${Math.round(confidence * 100)}% confidence`
+}
+
+export function formatConfidenceBand(confidence: number) {
+  if (!Number.isFinite(confidence)) {
+    return 'unknown signal'
+  }
+  if (confidence >= 0.82) {
+    return 'strong signal'
+  }
+  if (confidence >= 0.68) {
+    return 'good signal'
+  }
+  return 'tentative signal'
+}
+
+export function describeAiSuggestion(
+  suggestion: AiAssistedSuggestionDto,
+  presets: PresetDefinitionDto[],
+) {
+  const presetName = presetNameFromId(suggestion.suggestedPresetId, presets)
+  switch (suggestion.kind) {
+    case 'sourceProfile':
+      return `Safepath sees a ${formatSourceProfileKind(
+        suggestion.sourceProfileKind,
+      )} scan shape and is keeping this as a reviewable hint.`
+    case 'presetRecommendation':
+      return `Safepath thinks ${presetName ?? 'this preset'} is a calm starting point for this scan.`
+    case 'protectionRecommendation':
+      return 'Safepath recommends confirming this boundary before broader organization moves.'
+    default:
+      return suggestion.summary
+  }
+}
+
+export function summarizeAiEvidence(suggestion: AiAssistedSuggestionDto) {
+  if (suggestion.reasons.length === 0) {
+    return null
+  }
+  return `Evidence: ${joinReadableList(suggestion.reasons)}.`
+}
+
+export function aiSuggestionActionLabel(
+  suggestion: AiAssistedSuggestionDto,
+  presets: PresetDefinitionDto[],
+) {
+  if (suggestion.suggestedPresetId) {
+    return `Use ${presetNameFromId(suggestion.suggestedPresetId, presets) ?? 'suggested preset'} as starting preset`
+  }
+  if (suggestion.suggestedProtectionKind) {
+    switch (suggestion.suggestedProtectionKind) {
+      case 'projectRoot':
+        return 'Confirm project root'
+      case 'parentFolder':
+        return 'Confirm parent boundary'
+      case 'preserveBoundary':
+        return 'Confirm preserve boundary'
+      case 'independent':
+        return 'Mark as independent'
+      case 'userProtected':
+      default:
+        return 'Keep this protected'
+    }
+  }
+  return 'Apply suggestion'
+}
+
+export function describeLearnerSuggestion(
+  suggestion: LearnerSuggestionDto,
+  presets: PresetDefinitionDto[],
+) {
+  const presetName = presetNameFromId(suggestion.presetId, presets) ?? suggestion.presetId
+  switch (suggestion.kind) {
+    case 'duplicateKeeperPolicySuggestion':
+      return `${presetName} often needs closer duplicate review before Safepath's keeper suggestion is accepted.`
+    case 'ruleReviewTuningSuggestion':
+      return `Actions from this rule often end up rejected, so review-first handling may fit ${presetName} better.`
+    case 'presetAffinitySuggestion':
+      return `For ${formatSourceProfileKind(suggestion.sourceProfileKind)} scans, you usually start with ${presetName}.`
+    case 'reviewModePreferenceSuggestion':
+      return suggestion.suggestedReviewMode === 'strict'
+        ? `Your local review history leans toward conservative review for ${presetName}.`
+        : `Your local review history usually stays comfortable with standard review for ${presetName}.`
+  }
+}
+
+export function learnerSuggestionEvidence(
+  suggestion: LearnerSuggestionDto,
+  presets: PresetDefinitionDto[],
+) {
+  const presetName = presetNameFromId(suggestion.presetId, presets) ?? suggestion.presetId
+  switch (suggestion.kind) {
+    case 'duplicateKeeperPolicySuggestion':
+      return `${suggestion.disagreementCount} of ${suggestion.basedOnObservationCount} duplicate groups in ${presetName} were corrected.`
+    case 'ruleReviewTuningSuggestion':
+      return `${suggestion.rejectionCount} of ${suggestion.basedOnObservationCount} review decisions for rule ${suggestion.ruleId} were rejected.`
+    case 'presetAffinitySuggestion':
+      return `${suggestion.presetSelectionCount} of ${suggestion.basedOnObservationCount} similar scans used ${presetName}.`
+    case 'reviewModePreferenceSuggestion':
+      return `${suggestion.rejectionCount + suggestion.disagreementCount} of ${suggestion.basedOnObservationCount} local outcomes leaned conservative.`
+    default:
+      return null
+  }
+}
+
+export function learnerSuggestionStatusLabel(suggestion: LearnerSuggestionDto) {
+  switch (suggestion.kind) {
+    case 'duplicateKeeperPolicySuggestion':
+      return `${(suggestion.disagreementRate * 100).toFixed(0)}% corrected`
+    case 'ruleReviewTuningSuggestion':
+      return `${(suggestion.rejectionRate * 100).toFixed(0)}% rejected`
+    case 'presetAffinitySuggestion':
+      return `${(suggestion.presetSelectionRate * 100).toFixed(0)}% selected`
+    case 'reviewModePreferenceSuggestion':
+      return formatReviewMode(suggestion.suggestedReviewMode)
+    default:
+      return 'review hint'
+  }
+}
+
+function presetNameFromId(
+  presetId: string | null,
+  presets: PresetDefinitionDto[],
+) {
+  if (!presetId) {
+    return null
+  }
+  return presets.find((preset) => preset.presetId === presetId)?.name ?? null
+}
+
+function joinReadableList(values: string[]) {
+  if (values.length === 1) {
+    return values[0]
+  }
+  if (values.length === 2) {
+    return `${values[0]} and ${values[1]}`
+  }
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`
 }
 
 export function formatBytes(bytes: number) {

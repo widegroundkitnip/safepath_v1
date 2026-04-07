@@ -5,20 +5,25 @@ import type {
   LearnerDraftPreviewDto,
   LearnerObservationDto,
   LearnerSuggestionDto,
+  PresetDefinitionDto,
   SyntheticDatasetCategory,
 } from '../../types/app'
 import {
+  describeLearnerSuggestion,
   formatBytes,
   formatReviewMode,
   formatSourceProfileKind,
   formatSyntheticCategory,
   formatTimestamp,
+  learnerSuggestionEvidence,
+  learnerSuggestionStatusLabel,
   SYNTHETIC_CATEGORY_OPTIONS,
   SYNTHETIC_SIZE_OPTIONS,
 } from '../app/shared'
 
 interface SettingsViewProps {
   status: AppStatusDto | null
+  presets: PresetDefinitionDto[]
   draftDestinationPath: string
   syntheticOutputRoot: string
   syntheticDatasetName: string
@@ -63,6 +68,7 @@ interface SettingsViewProps {
 
 export function SettingsView({
   status,
+  presets,
   draftDestinationPath,
   syntheticOutputRoot,
   syntheticDatasetName,
@@ -377,6 +383,7 @@ export function SettingsView({
                 >
                   <div>
                     <strong>{suggestion.title}</strong>
+                    <p>{describeLearnerSuggestion(suggestion, presets)}</p>
                     {suggestion.kind === 'duplicateKeeperPolicySuggestion' ? (
                       <p>
                         preset {suggestion.presetId} | {suggestion.disagreementCount} corrections out
@@ -403,6 +410,9 @@ export function SettingsView({
                     )}
                     <p>{suggestion.rationale}</p>
                     <p>{suggestion.suggestedAdjustment}</p>
+                    {learnerSuggestionEvidence(suggestion, presets) ? (
+                      <p>{learnerSuggestionEvidence(suggestion, presets)}</p>
+                    ) : null}
                     {suggestion.feedback === 'acceptedForLater' &&
                     suggestion.feedbackRecordedAtEpochMs ? (
                       <p>Saved for later on {formatTimestamp(suggestion.feedbackRecordedAtEpochMs)}.</p>
@@ -453,13 +463,7 @@ export function SettingsView({
                   >
                     {suggestion.feedback === 'acceptedForLater'
                       ? 'saved'
-                      : suggestion.kind === 'duplicateKeeperPolicySuggestion'
-                        ? `${(suggestion.disagreementRate * 100).toFixed(0)}% corrected`
-                        : suggestion.kind === 'ruleReviewTuningSuggestion'
-                          ? `${(suggestion.rejectionRate * 100).toFixed(0)}% rejected`
-                          : suggestion.kind === 'presetAffinitySuggestion'
-                            ? `${(suggestion.presetSelectionRate * 100).toFixed(0)}% selected`
-                            : formatReviewMode(suggestion.suggestedReviewMode)}
+                      : learnerSuggestionStatusLabel(suggestion)}
                   </span>
                 </li>
               ))}
