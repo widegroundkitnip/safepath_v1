@@ -5,6 +5,8 @@ test('browser shell exposes workflow, settings, and history views', async ({ pag
 
   await expect(page.locator('h1')).toHaveText('Safepath')
 
+  await expect(page.getByText(/Step 1 of 6 · Prepare/)).toBeVisible()
+
   await page.getByRole('button', { name: 'Settings' }).click()
   await expect(
     page.getByRole('heading', { name: 'Generate messy fake datasets for scanning' }),

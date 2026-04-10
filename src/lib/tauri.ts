@@ -39,6 +39,8 @@ import type {
   UpdateReviewStateRequest,
 } from '../types/app'
 
+import * as E2E from './tauriE2eMock'
+
 function hasTauriRuntime() {
   return (
     typeof window !== 'undefined' &&
@@ -47,6 +49,9 @@ function hasTauriRuntime() {
 }
 
 export function isDesktopRuntimeAvailable() {
+  if (E2E.isE2eMockEnabled()) {
+    return true
+  }
   return hasTauriRuntime()
 }
 
@@ -101,6 +106,9 @@ const browserFallback: AppStatusDto = {
 }
 
 export async function getAppStatus(): Promise<AppStatusDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetAppStatus()
+  }
   if (!hasTauriRuntime()) {
     return browserFallback
   }
@@ -114,32 +122,53 @@ export async function getAppStatus(): Promise<AppStatusDto> {
 }
 
 export async function startScan(request: StartScanRequest): Promise<ScanJobStatusDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eStartScan(request)
+  }
   return invokeDesktop<ScanJobStatusDto>('start_scan', { request })
 }
 
 export async function generateSyntheticDataset(
   request: GenerateSyntheticDatasetRequest,
 ): Promise<GenerateSyntheticDatasetResultDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGenerateSyntheticDataset(request)
+  }
   return invokeDesktop<GenerateSyntheticDatasetResultDto>('generate_synthetic_dataset', { request })
 }
 
 export async function getPresets(): Promise<PresetDefinitionDto[]> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetPresets()
+  }
   return invokeDesktop<PresetDefinitionDto[]>('get_presets')
 }
 
 export async function buildPlan(request: BuildPlanRequest): Promise<PlanDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eBuildPlan(request)
+  }
   return invokeDesktop<PlanDto>('build_plan', { request })
 }
 
 export async function getPlan(planId: string): Promise<PlanDto | null> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetPlan(planId)
+  }
   return invokeDesktop<PlanDto | null>('get_plan', { planId })
 }
 
 export async function updateReviewState(request: UpdateReviewStateRequest): Promise<PlanDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eUpdateReviewState(request)
+  }
   return invokeDesktop<PlanDto>('update_review_state', { request })
 }
 
 export async function setDuplicateKeeper(request: SetDuplicateKeeperRequest): Promise<PlanDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eSetDuplicateKeeper(request)
+  }
   return invokeDesktop<PlanDto>('set_duplicate_keeper', { request })
 }
 
@@ -147,6 +176,9 @@ export async function getDuplicateReviewGroupDetails(
   planId: string,
   groupId: string,
 ): Promise<DuplicateReviewGroupDetailsDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetDuplicateReviewGroupDetails(planId, groupId)
+  }
   return invokeDesktop<DuplicateReviewGroupDetailsDto>('get_duplicate_review_group_details', {
     planId,
     groupId,
@@ -154,40 +186,67 @@ export async function getDuplicateReviewGroupDetails(
 }
 
 export async function revealPathInFileManager(path: string): Promise<void> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eRevealPathInFileManager(path)
+  }
   return invokeDesktop<void>('reveal_path_in_file_manager', { path })
 }
 
 export async function executePlan(request: ExecutePlanRequest): Promise<ExecutionSessionDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eExecutePlan(request)
+  }
   return invokeDesktop<ExecutionSessionDto>('execute_plan', { request })
 }
 
 export async function getExecutionPreflight(planId: string): Promise<PreflightIssueDto[]> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetExecutionPreflight(planId)
+  }
   return invokeDesktop<PreflightIssueDto[]>('get_execution_preflight', { planId })
 }
 
 export async function getExecutionStatus(
   sessionId: string,
 ): Promise<ExecutionSessionDto | null> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetExecutionStatus(sessionId)
+  }
   return invokeDesktop<ExecutionSessionDto | null>('get_execution_status', { sessionId })
 }
 
 export async function undoRecord(request: UndoRecordRequest): Promise<ExecutionSessionDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eUndoRecord(request)
+  }
   return invokeDesktop<ExecutionSessionDto>('undo_record', { request })
 }
 
 export async function undoSession(request: UndoSessionRequest): Promise<ExecutionSessionDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eUndoSession(request)
+  }
   return invokeDesktop<ExecutionSessionDto>('undo_session', { request })
 }
 
 export async function selectSources(paths: string[]): Promise<AppStatusDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eSelectSources(paths)
+  }
   return invokeDesktop<AppStatusDto>('select_sources', { paths })
 }
 
 export async function selectDestinations(paths: string[]): Promise<AppStatusDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eSelectDestinations(paths)
+  }
   return invokeDesktop<AppStatusDto>('select_destinations', { paths })
 }
 
 export async function getScanStatus(jobId: string): Promise<ScanJobStatusDto | null> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetScanStatus(jobId)
+  }
   return invokeDesktop<ScanJobStatusDto | null>('get_scan_status', { jobId })
 }
 
@@ -196,14 +255,23 @@ export async function getManifestPage(
   page: number,
   pageSize: number,
 ): Promise<ManifestPageDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetManifestPage(jobId, page, pageSize)
+  }
   return invokeDesktop<ManifestPageDto>('get_manifest_page', { jobId, page, pageSize })
 }
 
 export async function getHistoryPage(page: number, pageSize: number): Promise<HistoryPageDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetHistoryPage(page, pageSize)
+  }
   return invokeDesktop<HistoryPageDto>('get_history_page', { page, pageSize })
 }
 
 export async function getLearnerObservations(limit: number): Promise<LearnerObservationDto[]> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetLearnerObservations(limit)
+  }
   return invokeDesktop<LearnerObservationDto[]>('get_learner_observations', { limit })
 }
 
@@ -211,6 +279,9 @@ export async function getLearnerSuggestions(
   observationLimit: number,
   suggestionLimit: number,
 ): Promise<LearnerSuggestionDto[]> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetLearnerSuggestions(observationLimit, suggestionLimit)
+  }
   return invokeDesktop<LearnerSuggestionDto[]>('get_learner_suggestions', {
     observationLimit,
     suggestionLimit,
@@ -221,6 +292,9 @@ export async function getLearnerDraftPreviews(
   observationLimit: number,
   suggestionLimit: number,
 ): Promise<LearnerDraftPreviewDto[]> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetLearnerDraftPreviews(observationLimit, suggestionLimit)
+  }
   return invokeDesktop<LearnerDraftPreviewDto[]>('get_learner_draft_previews', {
     observationLimit,
     suggestionLimit,
@@ -230,6 +304,9 @@ export async function getLearnerDraftPreviews(
 export async function getAiEvaluationSnapshot(
   observationLimit: number,
 ): Promise<AiEvaluationSnapshotDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetAiEvaluationSnapshot(observationLimit)
+  }
   return invokeDesktop<AiEvaluationSnapshotDto>('get_ai_evaluation_snapshot', {
     observationLimit,
   })
@@ -238,20 +315,32 @@ export async function getAiEvaluationSnapshot(
 export async function saveLearnerDraftAsPreset(
   request: SaveLearnerDraftPreviewRequest,
 ): Promise<PresetDefinitionDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eSaveLearnerDraftAsPreset(request)
+  }
   return invokeDesktop<PresetDefinitionDto>('save_learner_draft_as_preset', { request })
 }
 
 export async function recordLearnerSuggestionFeedback(
   request: RecordLearnerSuggestionFeedbackRequest,
 ): Promise<void> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eRecordLearnerSuggestionFeedback(request)
+  }
   return invokeDesktop<void>('record_learner_suggestion_feedback', { request })
 }
 
 export async function cancelScan(jobId: string): Promise<ScanJobStatusDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eCancelScan(jobId)
+  }
   return invokeDesktop<ScanJobStatusDto>('cancel_scan', { jobId })
 }
 
 export async function getAnalysisSummary(jobId: string): Promise<AnalysisSummaryDto | null> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetAnalysisSummary(jobId)
+  }
   return invokeDesktop<AnalysisSummaryDto | null>('get_analysis_summary', { jobId })
 }
 
@@ -259,10 +348,16 @@ export async function setProtectionOverride(
   path: string,
   overrideKind: ProtectionOverrideKind,
 ): Promise<ProtectionOverrideDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eSetProtectionOverride(path, overrideKind)
+  }
   return invokeDesktop<ProtectionOverrideDto>('set_protection_override', { path, overrideKind })
 }
 
 export async function runExpensiveAnalysis(jobId: string): Promise<void> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eRunExpensiveAnalysis(jobId)
+  }
   return invokeDesktop<void>('run_expensive_analysis', { jobId })
 }
 

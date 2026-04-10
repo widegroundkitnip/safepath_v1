@@ -21,6 +21,9 @@ coverage
 sample_reportlab.pdf
 .playwright
 
+# Local design reference (not required for build/tests)
+temp ref/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

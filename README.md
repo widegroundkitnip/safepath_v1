@@ -63,13 +63,15 @@ npm run tauri:dev
 
 For a user-facing explanation of Safepath's workflow and trust language, see [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 
+For **how to run tests and manual checks on your machine** (Vitest, Playwright, Cargo, dev vs Tauri), see [`docs/TESTING.md`](docs/TESTING.md).
+
 Useful commands:
 
 - `npm run dev`: Vite browser shell only
 - `npm run build`: TypeScript compile + Vite build
 - `npm run lint`: ESLint
 - `npm run test`: frontend smoke tests
-- `npm run test:e2e`: browser E2E smoke flow
+- `npm run test:e2e`: Playwright against the dev server with `VITE_E2E_MOCK=true` (in-memory Tauri stub for scan → plan → workspace flows)
 - `npm run tauri:dev`: desktop app in development
 - `npm run tauri:build`: packaged desktop build
 - `cargo test --workspace`: Rust unit/integration tests

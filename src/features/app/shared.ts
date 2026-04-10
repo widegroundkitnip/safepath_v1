@@ -2,6 +2,7 @@ import type {
   AiAssistedSuggestionKind,
   AiAssistedSuggestionDto,
   AiEvaluationStatus,
+  ExecutionSessionStatus,
   LearnerObservationDto,
   LearnerSuggestionDto,
   MediaDateSource,
@@ -9,6 +10,7 @@ import type {
   PlannedActionDto,
   PresetDefinitionDto,
   ReviewMode,
+  ReviewState,
   SourceProfileKind,
   SyntheticDatasetCategory,
 } from '../../types/app'
@@ -78,6 +80,44 @@ export function formatReviewMode(mode: ReviewMode) {
     case 'standard':
     default:
       return 'standard review'
+  }
+}
+
+/** Plain-language label for a planned action's review state (Simple mode). */
+export function formatPlanActionReviewState(state: ReviewState): string {
+  switch (state) {
+    case 'pending':
+      return 'Not reviewed yet'
+    case 'approved':
+      return 'Approved to run'
+    case 'rejected':
+      return 'Skipped'
+    case 'blocked':
+      return 'Blocked for safety'
+    case 'needsChoice':
+      return 'Needs your choice'
+    case 'executed':
+      return 'Finished'
+    default:
+      return state
+  }
+}
+
+/** Plain-language label for execution session status (Simple mode). */
+export function formatExecutionSessionStatusLabel(status: ExecutionSessionStatus): string {
+  switch (status) {
+    case 'pending':
+      return 'Starting…'
+    case 'running':
+      return 'In progress'
+    case 'completed':
+      return 'Finished'
+    case 'partiallyFailed':
+      return 'Finished with issues'
+    case 'failed':
+      return 'Stopped'
+    default:
+      return status
   }
 }
 

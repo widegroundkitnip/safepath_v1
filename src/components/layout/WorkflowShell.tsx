@@ -30,7 +30,7 @@ interface WorkflowShellProps {
 
 export function WorkflowShell({ centerHeader, left, center, right }: WorkflowShellProps) {
   return (
-    <main className="workflow-shell">
+    <main className="workflow-shell grid min-h-0 flex-1 grid-cols-[minmax(260px,320px)_minmax(0,1fr)_minmax(260px,320px)] gap-4">
       <aside className="workflow-shell__column workflow-shell__column--side">
         <ColumnPanel title="Sources" subtitle="What to scan">
           {left}

@@ -10,7 +10,13 @@ interface PaginatedSlice<T> {
   rangeEnd: number
 }
 
+function pathBasename(path: string): string {
+  const parts = path.split(/[/\\]/).filter(Boolean)
+  return parts.length > 0 ? (parts[parts.length - 1] ?? path) : path
+}
+
 interface HistoryViewProps {
+  uiMode: 'simple' | 'advanced'
   historyPage: HistoryPageDto | null
   historyPageIndex: number
   isLoadingHistory: boolean
@@ -28,6 +34,7 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({
+  uiMode,
   historyPage,
   historyPageIndex,
   isLoadingHistory,
@@ -104,14 +111,29 @@ export function HistoryView({
                     : ''
                 }`}
               >
-                <div className="review-item-main" onClick={() => onSelectHistoryEntry(entry)}>
+                <button
+                  type="button"
+                  className="review-item-main"
+                  aria-label={`Select history record ${entry.sourcePath}`}
+                  aria-pressed={selectedHistoryRecord?.recordId === entry.recordId}
+                  onClick={() => onSelectHistoryEntry(entry)}
+                >
                   <strong>{entry.sourcePath}</strong>
                   <p>{entry.destinationPath ?? entry.message ?? 'No destination recorded.'}</p>
                   <p>
-                    {entry.operationKind} | session {entry.sessionId} |{' '}
-                    {formatExecutionStrategy(entry.strategy)} | {entry.status}
+                    {uiMode === 'advanced' ? (
+                      <>
+                        {entry.operationKind} | session {entry.sessionId} |{' '}
+                        {formatExecutionStrategy(entry.strategy)} | {entry.status}
+                      </>
+                    ) : (
+                      <>
+                        {entry.operationKind} · {formatExecutionStrategy(entry.strategy)} ·{' '}
+                        {entry.status}
+                      </>
+                    )}
                   </p>
-                </div>
+                </button>
                 <span
                   className={`status-pill ${
                     entry.undoEligible ? 'status-pill--ready' : 'status-pill--needsAttention'
@@ -135,7 +157,11 @@ export function HistoryView({
             <header className="status-card__header">
               <div>
                 <p className="status-card__eyebrow">Selected record</p>
-                <h3>{selectedHistoryRecord.recordId}</h3>
+                <h3>
+                  {uiMode === 'advanced'
+                    ? selectedHistoryRecord.recordId
+                    : pathBasename(selectedHistoryRecord.sourcePath)}
+                </h3>
               </div>
               <span className="status-pill status-pill--neutral">{selectedHistoryRecord.status}</span>
             </header>
@@ -182,7 +208,7 @@ export function HistoryView({
             <header className="status-card__header">
               <div>
                 <p className="status-card__eyebrow">Session drill-down</p>
-                <h3>{selectedHistorySession.sessionId}</h3>
+                <h3>{uiMode === 'advanced' ? selectedHistorySession.sessionId : 'Session summary'}</h3>
               </div>
               <span className="status-pill status-pill--neutral">{selectedHistorySession.status}</span>
             </header>
@@ -207,7 +233,9 @@ export function HistoryView({
             <p className="status-card__summary">
               {selectedHistorySession.operationKind} session
               {selectedHistorySession.relatedSessionId
-                ? ` for ${selectedHistorySession.relatedSessionId}. `
+                ? uiMode === 'advanced'
+                  ? ` for ${selectedHistorySession.relatedSessionId}. `
+                  : ' linked to a previous run. '
                 : '. '}
               Started {formatTimestamp(selectedHistorySession.startedAtEpochMs)} and finished{' '}
               {formatTimestamp(selectedHistorySession.finishedAtEpochMs)}

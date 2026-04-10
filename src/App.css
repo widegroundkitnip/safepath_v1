@@ -53,14 +53,6 @@
   color: var(--text-dim);
 }
 
-.workflow-shell {
-  display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(260px, 320px);
-  gap: 16px;
-  min-height: 0;
-  flex: 1;
-}
-
 .workflow-shell__column {
   min-width: 0;
 }
@@ -69,7 +61,7 @@
 .status-card,
 .empty-card {
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 0.625rem;
   background: var(--panel-bg);
   box-shadow: var(--panel-shadow);
 }
@@ -343,6 +335,24 @@
   cursor: pointer;
 }
 
+button.review-item-main {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+button.review-item-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .manifest-list__item p,
 .manifest-list__item span {
   color: var(--text-dim);
@@ -445,4 +455,9 @@
   .status-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Reset inherited Tailwind text color for legacy card UI inside the new shell */
+.workflow-legacy {
+  color: var(--text-strong);
 }

@@ -1,11 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import './App.css'
-import { AppStatusSummary } from './components/layout/AppStatusSummary'
-import { WorkflowShell } from './components/layout/WorkflowShell'
-import { PermissionReadinessCard } from './components/permissions/PermissionReadinessCard'
+import { PresetsView } from './features/presets/PresetsView'
 import { HistoryView } from './features/history/HistoryView'
 import { SettingsView } from './features/settings/SettingsView'
+import { WorkflowResultsScreen } from './features/workflow/WorkflowResultsScreen'
+import { WorkflowScanningScreen } from './features/workflow/WorkflowScanningScreen'
+import { WorkflowCompletionScreen } from './features/workflow/WorkflowCompletionScreen'
+import { WorkflowExecutingScreen } from './features/workflow/WorkflowExecutingScreen'
+import { PlanReviewWorkspace } from './features/workflow/PlanReviewWorkspace'
+import { WorkflowStepper } from './features/workflow/WorkflowStepper'
+import { WorkflowSetupScreen } from './features/workflow/WorkflowSetupScreen'
+import { AppLayout, type AppNavId } from './shell/AppLayout'
+import { getWorkflowPhaseLabel, getWorkflowStepperActiveIndex } from './shell/getWorkflowPhaseLabel'
 import {
   buildPlan,
   cancelScan,
@@ -66,7 +73,6 @@ import type {
   PlanDto,
   PreflightIssueDto,
   PresetDefinitionDto,
-  ProtectionDetectionDto,
   ProtectionOverrideKind,
   ReviewDecision,
   ScanJobStatusDto,
@@ -75,24 +81,10 @@ import type {
 } from './types/app'
 import {
   actionMatchesBucket,
-  aiSuggestionActionLabel,
   ANALYSIS_DUPLICATE_PAGE_SIZE,
   buildDestinationImpactPreview,
-  countBucket,
-  describeAiSuggestion,
-  describeLearnerSuggestion,
   EXECUTION_RECORD_PAGE_SIZE,
   type DestinationFolderPreview,
-  formatAiAssistedSuggestionKind,
-  formatBytes,
-  formatConfidence,
-  formatConfidenceBand,
-  formatExecutionStrategy,
-  learnerSuggestionEvidence,
-  formatMediaDateSource,
-  formatReviewMode,
-  formatSourceProfileKind,
-  formatTimestamp,
   HISTORY_PAGE_SIZE,
   HISTORY_SESSION_RECORD_PAGE_SIZE,
   isDuplicateKeeperObservation,
@@ -105,12 +97,15 @@ import {
   REVIEW_ACTION_PAGE_SIZE,
   REVIEW_GROUP_PAGE_SIZE,
   type ReviewBucket,
-  summarizeAiEvidence,
   SYNTHETIC_SIZE_OPTIONS,
 } from './features/app/shared'
 
 function App() {
-  const [activeView, setActiveView] = useState<'workflow' | 'history' | 'settings'>('workflow')
+  const [activeNav, setActiveNav] = useState<AppNavId>('workflow')
+  const [workflowStep, setWorkflowStep] = useState<
+    'setup' | 'scanning' | 'results' | 'workspace' | 'complete'
+  >('setup')
+  const [uiMode, setUiMode] = useState<'simple' | 'advanced'>('simple')
   const [status, setStatus] = useState<AppStatusDto | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sourceInput, setSourceInput] = useState('')
@@ -153,6 +148,7 @@ function App() {
   const [isBuildingPlan, setIsBuildingPlan] = useState(false)
   const [isUpdatingReview, setIsUpdatingReview] = useState(false)
   const [isExecutingPlan, setIsExecutingPlan] = useState(false)
+  const wasExecutingPlanRef = useRef(false)
   const [isLoadingExecutionPreflight, setIsLoadingExecutionPreflight] = useState(false)
   const [isLoadingDuplicateGroupDetails, setIsLoadingDuplicateGroupDetails] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
@@ -690,6 +686,16 @@ function App() {
   }, [activeReviewBucket])
 
   useEffect(() => {
+    if (uiMode !== 'simple') {
+      return
+    }
+    const allowed: ReviewBucket[] = ['all', 'duplicates', 'needsChoice', 'approved']
+    if (!allowed.includes(activeReviewBucket)) {
+      setActiveReviewBucket('all')
+    }
+  }, [uiMode, activeReviewBucket])
+
+  useEffect(() => {
     if (!executionSession?.sessionId) {
       return
     }
@@ -796,7 +802,7 @@ function App() {
   }, [executionSession?.sessionId, executionSession?.status])
 
   useEffect(() => {
-    if (activeView !== 'history') {
+    if (activeNav !== 'history') {
       return
     }
 
@@ -823,7 +829,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [activeView, historyPageIndex])
+  }, [activeNav, historyPageIndex])
 
   useEffect(() => {
     if (!historyPage) {
@@ -843,7 +849,7 @@ function App() {
   }, [historyPage, selectedHistoryRecordId])
 
   useEffect(() => {
-    if (!selectedHistorySessionId || activeView !== 'history') {
+    if (!selectedHistorySessionId || activeNav !== 'history') {
       setSelectedHistorySession(null)
       return
     }
@@ -868,7 +874,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [activeView, selectedHistorySessionId])
+  }, [activeNav, selectedHistorySessionId])
 
   useEffect(() => {
     setHistorySessionRecordPageIndex(0)
@@ -959,6 +965,7 @@ function App() {
 
       const nextScanStatus = await startScan({ sourcePaths: nextSourcePaths })
       setScanStatus(nextScanStatus)
+      setWorkflowStep('scanning')
       setStatus(await getAppStatus())
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to start scan.')
@@ -979,7 +986,7 @@ function App() {
       setSourceInput(rootPath)
       const nextStatus = await selectSources([rootPath])
       setStatus(nextStatus)
-      setActiveView('workflow')
+      setActiveNav('workflow')
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : 'Failed to apply synthetic dataset source.',
@@ -1048,7 +1055,7 @@ function App() {
       })
       setSyntheticDatasetResult(result)
       setSourceInput(result.rootPath)
-      setActiveView('workflow')
+      setActiveNav('workflow')
       await startScanFlow([result.rootPath], draftDestinationPaths)
     } catch (nextError) {
       setError(
@@ -1103,6 +1110,7 @@ function App() {
         presetId: selectedPresetId,
       })
       setPlan(nextPlan)
+      setWorkflowStep('workspace')
       setActiveReviewBucket('all')
       setReviewPageIndex(0)
       setReviewGroupPageIndex(0)
@@ -1276,10 +1284,12 @@ function App() {
     try {
       const latestPreflightIssues = await loadExecutionPreflight(plan.planId)
       if (!latestPreflightIssues) {
+        wasExecutingPlanRef.current = false
         setIsExecutingPlan(false)
         return
       }
       if (latestPreflightIssues.some((issue) => issue.severity === 'error')) {
+        wasExecutingPlanRef.current = false
         setIsExecutingPlan(false)
         return
       }
@@ -1295,6 +1305,7 @@ function App() {
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to execute plan.')
+      wasExecutingPlanRef.current = false
       setIsExecutingPlan(false)
     }
   }
@@ -1343,6 +1354,7 @@ function App() {
       const nextPlan = await getPlan(undoRun.planId)
       if (nextPlan) {
         setPlan(nextPlan)
+        setWorkflowStep('workspace')
       }
       setStatus(await getAppStatus())
     } catch (nextError) {
@@ -1367,6 +1379,7 @@ function App() {
       const nextPlan = await getPlan(undoRun.planId)
       if (nextPlan) {
         setPlan(nextPlan)
+        setWorkflowStep('workspace')
       }
       setStatus(await getAppStatus())
     } catch (nextError) {
@@ -1376,48 +1389,167 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    const s = scanStatus?.status
+    if (s === 'cancelled' || s === 'failed') {
+      setWorkflowStep('setup')
+      return
+    }
+    if (s === 'completed' && workflowStep === 'scanning') {
+      setWorkflowStep('results')
+    }
+  }, [scanStatus?.status, workflowStep])
+
+  useEffect(() => {
+    if (!plan && scanStatus?.status === 'completed' && workflowStep === 'workspace') {
+      setWorkflowStep('results')
+    }
+  }, [plan, scanStatus?.status, workflowStep])
+
+  useEffect(() => {
+    if (activeNav !== 'workflow' && activeNav !== 'review') {
+      return
+    }
+    const s = scanStatus?.status
+    if (s === 'running' || s === 'pending') {
+      setWorkflowStep('scanning')
+    }
+  }, [activeNav, scanStatus?.status])
+
+  useEffect(() => {
+    if (isExecutingPlan) {
+      wasExecutingPlanRef.current = true
+      return
+    }
+    if (
+      wasExecutingPlanRef.current &&
+      executionSession &&
+      executionSession.status !== 'pending' &&
+      executionSession.status !== 'running'
+    ) {
+      wasExecutingPlanRef.current = false
+      setWorkflowStep('complete')
+    }
+  }, [isExecutingPlan, executionSession])
+
+  const phaseLabelParams = useMemo(
+    () => ({
+      activeNav,
+      workflowStep,
+      plan,
+      scanStatus,
+      executionSession,
+      executionIsActive,
+      backendWorkflowPhase: status?.workflowPhase,
+    }),
+    [
+      activeNav,
+      workflowStep,
+      plan,
+      scanStatus,
+      executionSession,
+      executionIsActive,
+      status?.workflowPhase,
+    ],
+  )
+
+  const phaseLabel = useMemo(() => getWorkflowPhaseLabel(phaseLabelParams), [phaseLabelParams])
+
+  const workflowStepperActiveIndex = useMemo(
+    () => getWorkflowStepperActiveIndex(phaseLabelParams),
+    [phaseLabelParams],
+  )
+
+  const desktopAvailable = isDesktopRuntimeAvailable()
+
+  const showExecutingMain =
+    !!plan &&
+    executionIsActive &&
+    (activeNav === 'workflow' || activeNav === 'review')
+
+  const showCompletionMain =
+    !!plan &&
+    !!executionSession &&
+    workflowStep === 'complete' &&
+    !executionIsActive &&
+    (activeNav === 'workflow' || activeNav === 'review')
+
+  const showPlanWorkspace =
+    !!plan &&
+    !executionIsActive &&
+    workflowStep !== 'complete' &&
+    ((activeNav === 'workflow' && workflowStep === 'workspace') || activeNav === 'review')
+
+  function handleAppNav(id: AppNavId) {
+    setActiveNav(id)
+  }
+
+  async function handleStartOver() {
+    setError(null)
+    try {
+      if (scanStatus?.jobId && scanStatus.status === 'running') {
+        await cancelScan(scanStatus.jobId)
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to cancel scan.')
+    }
+    setWorkflowStep('setup')
+    setPlan(null)
+    setExecutionSession(null)
+    setAnalysisSummary(null)
+    setScanStatus(null)
+    setScanProgress(null)
+    setManifestPage(null)
+    setExecutionPreflightIssues([])
+    setManifestPageIndex(0)
+    wasExecutingPlanRef.current = false
+    try {
+      const next = await getAppStatus()
+      setStatus(next)
+      setSourceInput(next.sourcePaths.join('\n'))
+      setDestinationInput(next.destinationPaths[0] ?? '')
+    } catch {
+      /* ignore */
+    }
+    setActiveNav('workflow')
+  }
+
+  const showStartOver = workflowStep !== 'setup' || !!scanStatus || !!plan
+
+  const reviewBucketRows: Array<[ReviewBucket, string]> =
+    uiMode === 'simple'
+      ? [
+          ['all', 'All'],
+          ['duplicates', 'Duplicates'],
+          ['needsChoice', 'Needs choice'],
+          ['approved', 'Approved'],
+        ]
+      : [
+          ['all', 'All'],
+          ['blocked', 'Blocked'],
+          ['protected', 'Protected'],
+          ['duplicates', 'Duplicates'],
+          ['unknown', 'Unknown'],
+          ['approved', 'Approved'],
+          ['rejected', 'Rejected'],
+          ['needsChoice', 'Needs choice'],
+        ]
+
   return (
-    <div className="app-frame">
-      <header className="app-header">
-        <div>
-          <p className="app-header__eyebrow">Desktop organizing workflow</p>
-          <h1>Safepath</h1>
-          <p className="app-header__subtitle">
-            Safepath now keeps selected sources and destinations in Rust, checks read and write
-            permissions before scanning, persists manifest pages, supports both cheap and expensive
-            duplicate analysis, can build preset-driven plans directly from Rust-owned rules,
-            stores structured execution history in Rust, and now records duplicate-keeper learner
-            observations without auto-applying any suggestions.
-          </p>
-        </div>
-        <div className="view-toggle" role="tablist" aria-label="App sections">
-          <button
-            className={`toggle-button ${activeView === 'workflow' ? 'toggle-button--active' : ''}`}
-            onClick={() => setActiveView('workflow')}
-            type="button"
-          >
-            Workflow
-          </button>
-          <button
-            className={`toggle-button ${activeView === 'history' ? 'toggle-button--active' : ''}`}
-            onClick={() => setActiveView('history')}
-            type="button"
-          >
-            History
-          </button>
-          <button
-            className={`toggle-button ${activeView === 'settings' ? 'toggle-button--active' : ''}`}
-            onClick={() => setActiveView('settings')}
-            type="button"
-          >
-            Settings
-          </button>
-        </div>
-      </header>
-
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      {activeView === 'settings' ? (
+    <AppLayout
+      activeNav={activeNav}
+      onNav={handleAppNav}
+      canOpenReview={!!plan}
+      phaseLabel={phaseLabel}
+      showStartOver={showStartOver}
+      onStartOver={() => void handleStartOver()}
+      uiMode={uiMode}
+      onToggleUiMode={() => setUiMode((m) => (m === 'simple' ? 'advanced' : 'simple'))}
+      error={error}
+      desktopAvailable={desktopAvailable}
+    >
+      {activeNav === 'settings' ? (
+        <div className="workflow-legacy">
         <SettingsView
           status={status}
           presets={presets}
@@ -1457,8 +1589,13 @@ function App() {
           onLearnerSuggestionFeedback={handleLearnerSuggestionFeedback}
           onSaveLearnerDraftPreview={handleSaveLearnerDraftPreview}
         />
-      ) : activeView === 'history' ? (
+        </div>
+      ) : null}
+
+      {activeNav === 'history' ? (
+        <div className="workflow-legacy">
         <HistoryView
+          uiMode={uiMode}
           historyPage={historyPage}
           historyPageIndex={historyPageIndex}
           isLoadingHistory={isLoadingHistory}
@@ -1478,1226 +1615,180 @@ function App() {
             setHistorySessionRecordPageIndex(historySessionRecordPage.page + 1)
           }
         />
-      ) : (
-        <WorkflowShell
-          centerHeader={
-            <span className="phase-pill">
-              {scanStatus ? `scan ${scanStatus.status}` : status?.workflowPhase ?? 'idle'}
-            </span>
-          }
-          left={
-            <div className="placeholder-stack">
-              <div className="status-card">
-                <header className="status-card__header">
-                  <div>
-                    <p className="status-card__eyebrow">Scan harness</p>
-                    <h3>Source paths</h3>
-                  </div>
-                </header>
-                <label className="field-label" htmlFor="source-paths">
-                  Enter one absolute path per line
-                </label>
-                <textarea
-                  id="source-paths"
-                  className="text-input text-input--multiline"
-                  placeholder="/Users/siggewidmark/Downloads"
-                  value={sourceInput}
-                  onChange={(event) => setSourceInput(event.target.value)}
-                />
-                <div className="button-row">
-                  <button
-                    className="action-button action-button--secondary"
-                    onClick={handleCheckReadiness}
-                    disabled={isCheckingReadiness}
-                    type="button"
-                  >
-                    {isCheckingReadiness ? 'Checking…' : 'Check readiness'}
-                  </button>
-                  <button
-                    className="action-button"
-                    onClick={handleStartScan}
-                    disabled={!canAttemptScan || isStartingScan}
-                    type="button"
-                  >
-                    {isStartingScan ? 'Starting…' : 'Start scan'}
-                  </button>
-                  <button
-                    className="action-button action-button--secondary"
-                    onClick={handleCancelScan}
-                    disabled={!scanStatus || scanStatus.status !== 'running'}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-              {status ? <PermissionReadinessCard readiness={status.permissionsReadiness} /> : null}
-              {analysisSummary?.structureSignals.length ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Structure warnings</p>
-                      <h3>{analysisSummary.structureSignals.length} signals</h3>
-                    </div>
-                  </header>
-                  <ul className="status-card__list">
-                    {analysisSummary.structureSignals.map((signal) => (
-                      <li key={`${signal.kind}-${signal.description}`}>{signal.description}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          }
-          center={
-            <div className="placeholder-stack">
-              {status ? (
-                <AppStatusSummary status={status} />
-              ) : (
-                <div className="empty-card">
-                  <strong>Loading desktop status</strong>
-                  <p>Waiting for the first Rust command to hydrate the shell.</p>
-                </div>
-              )}
-              {scanStatus ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Scan job</p>
-                      <h3>{scanStatus.jobId}</h3>
-                    </div>
-                    <span className="status-pill status-pill--neutral">{scanStatus.status}</span>
-                  </header>
-                  <dl className="status-grid">
-                    <div>
-                      <dt>Discovered</dt>
-                      <dd>{scanStatus.discoveredEntries}</dd>
-                    </div>
-                    <div>
-                      <dt>Files</dt>
-                      <dd>{scanStatus.scannedFiles}</dd>
-                    </div>
-                    <div>
-                      <dt>Directories</dt>
-                      <dd>{scanStatus.scannedDirectories}</dd>
-                    </div>
-                    <div>
-                      <dt>Page size</dt>
-                      <dd>{scanStatus.pageSize}</dd>
-                    </div>
-                  </dl>
-                  {scanProgress?.latestPath ? (
-                    <p className="status-card__summary">Latest path: {scanProgress.latestPath}</p>
-                  ) : null}
-                  {scanStatus.errorMessage ? (
-                    <p className="status-card__summary">Error: {scanStatus.errorMessage}</p>
-                  ) : null}
-                  <div className="button-row">
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={
-                        isRunningExpensiveAnalysis ||
-                        scanStatus.status !== 'completed' ||
-                        scanStatus.discoveredEntries === 0
-                      }
-                      onClick={handleRunExpensiveAnalysis}
-                      type="button"
-                    >
-                      {isRunningExpensiveAnalysis ? 'Hashing…' : 'Run expensive analysis'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="empty-card empty-card--large">
-                  <strong>Workflow overview</strong>
-                  <p>
-                    Start with a readiness check and scan, then this column will fill with
-                    analysis, plan building, review decisions, and execution progress as each step
-                    completes.
-                  </p>
-                </div>
-              )}
-              {analysisSummary ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Analysis summary</p>
-                      <h3>Reviewable results</h3>
-                    </div>
-                    <span className="status-pill status-pill--neutral">
-                      {analysisSummary.noExtensionCount} no-ext / {analysisSummary.unknownCount} unknown
-                    </span>
-                  </header>
-                  <dl className="status-grid">
-                    {analysisSummary.categoryCounts.map((count) => (
-                      <div key={count.category}>
-                        <dt>{count.category}</dt>
-                        <dd>{count.count}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {analysisSummary.skippedLargeSyntheticFiles > 0 ? (
-                    <p className="status-card__summary">
-                      Expensive duplicate hashing skipped{' '}
-                      {analysisSummary.skippedLargeSyntheticFiles} large synthetic placeholder
-                      file{analysisSummary.skippedLargeSyntheticFiles === 1 ? '' : 's'} to avoid
-                      reading through sparse multi-GB or multi-TB test data.
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {analysisSummary?.aiAssistedSuggestions.length ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">AI-assisted suggestions</p>
-                      <h3>{analysisSummary.aiAssistedSuggestions.length} reviewable hints</h3>
-                    </div>
-                  </header>
-                  <p className="status-card__summary">
-                    These suggestions are local, explainable, and optional. Safepath will not apply
-                    them unless you choose to.
-                  </p>
-                  <ul className="manifest-list">
-                    {analysisSummary.aiAssistedSuggestions.map((suggestion) => (
-                      <li
-                        key={suggestion.suggestionId}
-                        className="manifest-list__item manifest-list__item--stacked"
-                      >
-                        <div>
-                          <strong>{suggestion.title}</strong>
-                          <p>{describeAiSuggestion(suggestion, presets)}</p>
-                          <p>
-                            {formatAiAssistedSuggestionKind(suggestion.kind)} |{' '}
-                            {formatConfidence(suggestion.confidence)} |{' '}
-                            {formatConfidenceBand(suggestion.confidence)}
-                          </p>
-                          <p>{suggestion.summary}</p>
-                          {summarizeAiEvidence(suggestion) ? <p>{summarizeAiEvidence(suggestion)}</p> : null}
-                        </div>
-                        <div className="button-row button-row--compact">
-                          {suggestion.suggestedPresetId ? (
-                            <button
-                              className="action-button action-button--secondary"
-                              disabled={selectedPresetId === suggestion.suggestedPresetId}
-                              onClick={() => setSelectedPresetId(suggestion.suggestedPresetId ?? '')}
-                              type="button"
-                            >
-                              {selectedPresetId === suggestion.suggestedPresetId
-                                ? 'Using this preset'
-                                : aiSuggestionActionLabel(suggestion, presets)}
-                            </button>
-                          ) : null}
-                          {suggestion.suggestedProtectionPath && suggestion.suggestedProtectionKind ? (
-                            <button
-                              className="action-button action-button--secondary"
-                              disabled={isOverridden(suggestion.suggestedProtectionPath)}
-                              onClick={() =>
-                                handleApplyStructureProtection(
-                                  suggestion.suggestedProtectionPath ?? '',
-                                  suggestion.suggestedProtectionKind ?? 'userProtected',
-                                )
-                              }
-                              type="button"
-                            >
-                              {isOverridden(suggestion.suggestedProtectionPath)
-                                ? 'Boundary confirmed'
-                                : aiSuggestionActionLabel(suggestion, presets)}
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {analysisSummary && workflowPreferenceSuggestions.length > 0 ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Preference hints</p>
-                      <h3>{workflowPreferenceSuggestions.length} local suggestions</h3>
-                    </div>
-                  </header>
-                  <p className="status-card__summary">
-                    These hints come from local preset choices and review history. They stay optional,
-                    and you can suppress them from Settings at any time.
-                  </p>
-                  <ul className="manifest-list">
-                    {workflowPreferenceSuggestions.map((suggestion) => (
-                      <li
-                        key={suggestion.suggestionId}
-                        className="manifest-list__item manifest-list__item--stacked"
-                      >
-                        <div>
-                          <strong>{suggestion.title}</strong>
-                          <p>{describeLearnerSuggestion(suggestion, presets)}</p>
-                          <p>{suggestion.rationale}</p>
-                          <p>{suggestion.suggestedAdjustment}</p>
-                          {learnerSuggestionEvidence(suggestion, presets) ? (
-                            <p>{learnerSuggestionEvidence(suggestion, presets)}</p>
-                          ) : null}
-                          {suggestion.kind === 'presetAffinitySuggestion' ? (
-                            <p>
-                              {formatSourceProfileKind(suggestion.sourceProfileKind)} profile |{' '}
-                              {Math.round(suggestion.presetSelectionRate * 100)}% of{' '}
-                              {suggestion.basedOnObservationCount} similar scans
-                            </p>
-                          ) : (
-                            <p>
-                              Suggested mode: {formatReviewMode(suggestion.suggestedReviewMode)} |{' '}
-                              {Math.round(suggestion.conservativePreferenceRate * 100)}%
-                              {' '}conservative tendency
-                            </p>
-                          )}
-                        </div>
-                        <div className="button-row button-row--compact">
-                          {suggestion.kind === 'presetAffinitySuggestion' ? (
-                            <button
-                              className="action-button action-button--secondary"
-                              disabled={selectedPresetId === suggestion.presetId}
-                              onClick={() => setSelectedPresetId(suggestion.presetId)}
-                              type="button"
-                            >
-                              {selectedPresetId === suggestion.presetId
-                                ? 'Using this preset'
-                                : `Use ${
-                                    presets.find((preset) => preset.presetId === suggestion.presetId)
-                                      ?.name ?? 'suggested preset'
-                                  } as starting preset`}
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {analysisSummary && presets.length > 0 ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Preset planner</p>
-                      <h3>Build a reviewable plan</h3>
-                    </div>
-                  </header>
-                  <label className="field-label" htmlFor="preset-select">
-                    Choose a built-in preset
-                  </label>
-                  <select
-                    id="preset-select"
-                    className="text-input"
-                    value={selectedPresetId}
-                    onChange={(event) => setSelectedPresetId(event.target.value)}
-                  >
-                    {presets.map((preset) => (
-                      <option key={preset.presetId} value={preset.presetId}>
-                        {preset.name}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedPresetId ? (
-                    <p className="status-card__summary">
-                      {presets.find((preset) => preset.presetId === selectedPresetId)?.description}
-                    </p>
-                  ) : null}
-                  <div className="button-row">
-                    <button
-                      className="action-button"
-                      disabled={isBuildingPlan || !scanStatus?.jobId}
-                      onClick={handleBuildPlan}
-                      type="button"
-                    >
-                      {isBuildingPlan ? 'Building…' : 'Build plan'}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              {plan ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Plan summary</p>
-                      <h3>{plan.presetName}</h3>
-                    </div>
-                    <span className="status-pill status-pill--neutral">{plan.summary.totalActions} actions</span>
-                  </header>
-                  <dl className="status-grid">
-                    <div>
-                      <dt>Moves</dt>
-                      <dd>{plan.summary.moveActions}</dd>
-                    </div>
-                    <div>
-                      <dt>Review</dt>
-                      <dd>{plan.summary.reviewActions}</dd>
-                    </div>
-                    <div>
-                      <dt>Blocked</dt>
-                      <dd>{plan.summary.blockedActions}</dd>
-                    </div>
-                    <div>
-                      <dt>Skipped</dt>
-                      <dd>{plan.summary.skippedActions}</dd>
-                    </div>
-                  </dl>
-                  <p className="status-card__summary">Destination root: {plan.destinationRoot}</p>
-                  <div className="detail-stack">
-                    <div className="status-card__header">
-                      <div>
-                        <p className="status-card__eyebrow">Destination impact preview</p>
-                        <h3>Read-only first look</h3>
-                      </div>
-                      <span className="status-pill status-pill--neutral">
-                        {destinationImpactPreview?.affectedFolderCount ?? 0} folder
-                        {destinationImpactPreview?.affectedFolderCount === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                    <p className="status-card__summary">
-                      This preview only shows destinations Safepath can already name. It is meant to
-                      answer “where will things land?” without pretending to be a full tree diff.
-                    </p>
-                    {destinationImpactPreview && destinationImpactPreview.routedActionCount > 0 ? (
-                      <>
-                        <dl className="status-grid">
-                          <div>
-                            <dt>Affected folders</dt>
-                            <dd>{destinationImpactPreview.affectedFolderCount}</dd>
-                          </div>
-                          <div>
-                            <dt>Routed actions</dt>
-                            <dd>{destinationImpactPreview.routedActionCount}</dd>
-                          </div>
-                          <div>
-                            <dt>Move actions</dt>
-                            <dd>{destinationImpactPreview.moveActionCount}</dd>
-                          </div>
-                          <div>
-                            <dt>No destination yet</dt>
-                            <dd>{destinationImpactPreview.unresolvedActionCount}</dd>
-                          </div>
-                        </dl>
-                        <p className="status-card__summary">
-                          Review-only, blocked, and duplicate-only actions without a concrete
-                          destination stay outside this preview until the plan becomes more specific.
-                        </p>
-                        <ul className="manifest-list">
-                          {visibleDestinationPreviewFolders.map((folder) => (
-                            <li
-                              key={folder.folderPath}
-                              className="manifest-list__item manifest-list__item--stacked"
-                            >
-                              <div>
-                                <strong>{folder.relativeFolderPath}</strong>
-                                <p>{folder.itemCount} planned item{folder.itemCount === 1 ? '' : 's'}</p>
-                                <p>{folder.folderPath}</p>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                        {destinationImpactPreview.folders.length > 5 ? (
-                          <div className="button-row button-row--compact">
-                            <button
-                              className="action-button action-button--secondary"
-                              onClick={() =>
-                                setShowAllDestinationPreviewFolders((current) => !current)
-                              }
-                              type="button"
-                            >
-                              {showAllDestinationPreviewFolders
-                                ? 'Show fewer folders'
-                                : `Show all ${destinationImpactPreview.folders.length} folders`}
-                            </button>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <p className="status-card__summary">
-                        This plan does not have enough concrete destination paths to preview yet.
-                        That is expected for duplicate-only or review-heavy plans.
-                      </p>
-                    )}
-                  </div>
-                  {approvedActionCount > 0 ? (
-                    <div className="detail-stack">
-                      <div className="status-card__header">
-                        <div>
-                          <p className="status-card__eyebrow">Execution checks</p>
-                          <h3>
-                            {hasExecutionPreflightErrors
-                              ? 'Fix blocking issues before execute'
-                              : executionPreflightWarnings.length > 0
-                                ? 'Warnings to review before execute'
-                                : 'Ready to execute'}
-                          </h3>
-                        </div>
-                        <span className="status-pill status-pill--neutral">
-                          {executionPreflightIssues.length} issue
-                          {executionPreflightIssues.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                      <p className="status-card__summary">
-                        Safepath checks approved actions before it moves anything, then runs the same
-                        guardrails again at execute time.
-                      </p>
-                      {isLoadingExecutionPreflight ? (
-                        <p className="status-card__summary">Refreshing execution checks…</p>
-                      ) : executionPreflightIssues.length === 0 ? (
-                        <p className="status-card__summary">
-                          No blocking issues found. If files change again before you run the plan,
-                          Safepath will re-check the plan at execution time.
-                        </p>
-                      ) : (
-                        <>
-                          {executionPreflightWarnings.length > 0 ? (
-                            <p className="status-card__summary">
-                              Warnings do not block execution. They usually mean a source path changed
-                              since the last scan, so this plan may be stale.
-                            </p>
-                          ) : null}
-                          <ul className="status-card__list">
-                            {executionPreflightIssues.map((issue, index) => (
-                              <li key={`${issue.actionId ?? 'session'}-${index}`}>
-                                {issue.severity}: {issue.message}
-                              </li>
-                            ))}
-                          </ul>
-                        </>
-                      )}
-                      <div className="button-row button-row--compact">
-                        <button
-                          className="action-button action-button--secondary"
-                          disabled={isLoadingExecutionPreflight}
-                          onClick={() => void loadExecutionPreflight(plan.planId)}
-                          type="button"
-                        >
-                          {isLoadingExecutionPreflight ? 'Refreshing checks…' : 'Refresh checks'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="status-card__summary">
-                      Approve one or more actions to unlock execution checks and the final run step.
-                    </p>
-                  )}
-                  <div className="button-row">
-                    <button
-                      className="action-button"
-                      disabled={
-                        executionIsActive ||
-                        approvedActionCount === 0 ||
-                        isLoadingExecutionPreflight ||
-                        hasExecutionPreflightErrors
-                      }
-                      onClick={handleExecutePlan}
-                      type="button"
-                    >
-                      {executionIsActive ? 'Executing…' : `Execute approved (${approvedActionCount})`}
-                    </button>
-                  </div>
-                  <div className="review-bucket-row">
-                    {(
-                      [
-                        ['all', 'All'],
-                        ['blocked', 'Blocked'],
-                        ['protected', 'Protected'],
-                        ['duplicates', 'Duplicates'],
-                        ['unknown', 'Unknown'],
-                        ['approved', 'Approved'],
-                        ['rejected', 'Rejected'],
-                        ['needsChoice', 'Needs choice'],
-                      ] as Array<[ReviewBucket, string]>
-                    ).map(([bucket, label]) => (
-                      <button
-                        key={bucket}
-                        className={`review-bucket ${activeReviewBucket === bucket ? 'review-bucket--active' : ''}`}
-                        onClick={() => setActiveReviewBucket(bucket)}
-                        type="button"
-                      >
-                        {label} ({countBucket(plan, bucket)})
-                      </button>
-                    ))}
-                  </div>
-                  {reviewActionPage.totalItems > 0 ? (
-                    <p className="status-card__summary">
-                      Showing {reviewActionPage.rangeStart}-{reviewActionPage.rangeEnd} of{' '}
-                      {reviewActionPage.totalItems} action
-                      {reviewActionPage.totalItems === 1 ? '' : 's'} in this filter.
-                    </p>
-                  ) : null}
-                  <div className="button-row">
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={reviewActionPage.page === 0}
-                      onClick={() => handleChangeReviewPage(reviewActionPage.page - 1)}
-                      type="button"
-                    >
-                      Previous actions
-                    </button>
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={
-                        reviewActionPage.totalPages === 0 ||
-                        reviewActionPage.page >= reviewActionPage.totalPages - 1
-                      }
-                      onClick={() => handleChangeReviewPage(reviewActionPage.page + 1)}
-                      type="button"
-                    >
-                      Next actions
-                    </button>
-                  </div>
-                  {reviewActionPage.totalItems > 0 ? (
-                    <ul className="manifest-list">
-                      {reviewActionPage.items.map((action) => (
-                        <li
-                          key={action.actionId}
-                          className={`manifest-list__item manifest-list__item--stacked ${
-                            selectedAction?.actionId === action.actionId ? 'manifest-list__item--selected' : ''
-                          }`}
-                        >
-                          <div className="review-item-main" onClick={() => setSelectedActionId(action.actionId)}>
-                            <strong>{action.sourcePath}</strong>
-                            <p>
-                              {action.destinationPath ??
-                                action.explanation.blockedReason ??
-                                'No destination preview.'}
-                            </p>
-                            <p>
-                              {action.actionKind} | {action.reviewState}
-                              {action.explanation.conflictStatus
-                                ? ` | ${action.explanation.conflictStatus}`
-                                : ''}
-                            </p>
-                          </div>
-                          <div className="button-row button-row--compact">
-                            <button
-                              className="action-button"
-                              disabled={
-                                isUpdatingReview ||
-                                action.reviewState === 'blocked' ||
-                                action.reviewState === 'executed'
-                              }
-                              onClick={() => handleReviewDecision([action.actionId], 'approve')}
-                              type="button"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              className="action-button action-button--secondary"
-                              disabled={
-                                isUpdatingReview ||
-                                action.reviewState === 'blocked' ||
-                                action.reviewState === 'executed'
-                              }
-                              onClick={() => handleReviewDecision([action.actionId], 'reject')}
-                              type="button"
-                            >
-                              Reject
-                            </button>
-                            <button
-                              className="action-button action-button--secondary"
-                              disabled={isUpdatingReview || action.reviewState === 'executed'}
-                              onClick={() => handleReviewDecision([action.actionId], 'reset')}
-                              type="button"
-                            >
-                              Reset
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="empty-card">
-                      <strong>No actions in this filter</strong>
-                      <p>Pick a different review bucket or rebuild the plan to inspect more work.</p>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-              {selectedAction ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Action explanation</p>
-                      <h3>{selectedAction.sourcePath}</h3>
-                    </div>
-                    <span className="status-pill status-pill--neutral">{selectedAction.reviewState}</span>
-                  </header>
-                  <div className="detail-stack">
-                    <p>
-                      Rule: {selectedAction.explanation.matchedRule ?? 'fallback'} | Confidence:{' '}
-                      {selectedAction.explanation.confidence.toFixed(2)}
-                    </p>
-                    {selectedAction.destinationPath ? (
-                      <p>Destination: {selectedAction.destinationPath}</p>
-                    ) : null}
-                    {selectedAction.explanation.conflictStatus ? (
-                      <p>
-                        Conflict: {selectedAction.explanation.conflictStatus}
-                        {selectedAction.explanation.destinationConflictPath
-                          ? ` at ${selectedAction.explanation.destinationConflictPath}`
-                          : ''}
-                      </p>
-                    ) : null}
-                    {selectedAction.explanation.blockedReason ? (
-                      <p>Blocked reason: {selectedAction.explanation.blockedReason}</p>
-                    ) : null}
-                    {selectedAction.explanation.templateUsed ? (
-                      <>
-                        <p>Template: {selectedAction.explanation.templateUsed}</p>
-                        {selectedAction.explanation.previewedTemplateOutput ? (
-                          <p>
-                            Rendered path: {selectedAction.explanation.previewedTemplateOutput}
-                          </p>
-                        ) : null}
-                      </>
-                    ) : null}
-                    {selectedAction.explanation.templateError ? (
-                      <p>
-                        Template error: {selectedAction.explanation.templateError}. Unknown or invalid
-                        tokens stay blocked until the plan is rebuilt with a valid preset.
-                      </p>
-                    ) : null}
-                    {selectedAction.explanation.matchedConditions.length > 0 ? (
-                      <p>Matched: {selectedAction.explanation.matchedConditions.join(' | ')}</p>
-                    ) : null}
-                    {selectedAction.explanation.safetyFlags.length > 0 ? (
-                      <p>Safety flags: {selectedAction.explanation.safetyFlags.join(', ')}</p>
-                    ) : null}
-                    {selectedAction.explanation.notes.length > 0 ? (
-                      <p>{selectedAction.explanation.notes.join(' ')}</p>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              {executionSession ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Execution session</p>
-                      <h3>{executionSession.sessionId}</h3>
-                    </div>
-                    <span className="status-pill status-pill--neutral">{executionSession.status}</span>
-                  </header>
-                  <dl className="status-grid">
-                    <div>
-                      <dt>Approved</dt>
-                      <dd>{executionSession.approvedActionCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Completed</dt>
-                      <dd>{executionSession.completedActionCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Failed</dt>
-                      <dd>{executionSession.failedActionCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Skipped</dt>
-                      <dd>{executionSession.skippedActionCount}</dd>
-                    </div>
-                  </dl>
-                  <p className="status-card__summary">
-                    Progress:{' '}
-                    {executionSession.completedActionCount +
-                      executionSession.failedActionCount +
-                      executionSession.skippedActionCount}
-                    /{executionSession.approvedActionCount}
-                  </p>
-                  <p className="status-card__summary">
-                    Undo remains best-effort after execution. Safepath can only reverse actions that
-                    still have a valid destination or holding path and were recorded as rollback-safe.
-                  </p>
-                  {executionSession.preflightIssues.length > 0 ? (
-                    <>
-                      <p className="status-card__summary">
-                        Safepath recorded these final execution checks before the run started. Warning
-                        items usually mean the plan may be stale.
-                      </p>
-                      <ul className="status-card__list">
-                        {executionSession.preflightIssues.map((issue, index) => (
-                          <li key={`${issue.actionId ?? 'session'}-${index}`}>
-                            {issue.severity}: {issue.message}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  ) : null}
-                  {executionSession.records.length > 0 ? (
-                    <>
-                      <p className="status-card__summary">
-                        Showing {executionRecordPage.rangeStart}-{executionRecordPage.rangeEnd} of{' '}
-                        {executionRecordPage.totalItems} execution record
-                        {executionRecordPage.totalItems === 1 ? '' : 's'}.
-                      </p>
-                      <div className="button-row">
-                        <button
-                          className="action-button action-button--secondary"
-                          disabled={executionRecordPage.page === 0}
-                          onClick={() => setExecutionRecordPageIndex(executionRecordPage.page - 1)}
-                          type="button"
-                        >
-                          Previous records
-                        </button>
-                        <button
-                          className="action-button action-button--secondary"
-                          disabled={
-                            executionRecordPage.totalPages === 0 ||
-                            executionRecordPage.page >= executionRecordPage.totalPages - 1
-                          }
-                          onClick={() => setExecutionRecordPageIndex(executionRecordPage.page + 1)}
-                          type="button"
-                        >
-                          Next records
-                        </button>
-                      </div>
-                      <ul className="manifest-list">
-                        {executionRecordPage.items.map((record) => (
-                          <li key={record.recordId} className="manifest-list__item manifest-list__item--stacked">
-                            <div>
-                              <strong>{record.sourcePath}</strong>
-                              <p>{record.destinationPath ?? record.message ?? 'No destination recorded.'}</p>
-                              <p>
-                                {formatExecutionStrategy(record.strategy)} | {record.status}
-                              </p>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          }
-          right={
-            <div className="placeholder-stack">
-              {plan?.duplicateGroups.length ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Duplicate review groups</p>
-                      <h3>{plan.duplicateGroups.length} groups</h3>
-                    </div>
-                  </header>
-                  <p className="status-card__summary">
-                    Showing {reviewGroupPage.rangeStart}-{reviewGroupPage.rangeEnd} of{' '}
-                    {reviewGroupPage.totalItems} duplicate review group
-                    {reviewGroupPage.totalItems === 1 ? '' : 's'}.
-                  </p>
-                  <div className="button-row">
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={reviewGroupPage.page === 0}
-                      onClick={() => setReviewGroupPageIndex(reviewGroupPage.page - 1)}
-                      type="button"
-                    >
-                      Previous groups
-                    </button>
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={
-                        reviewGroupPage.totalPages === 0 ||
-                        reviewGroupPage.page >= reviewGroupPage.totalPages - 1
-                      }
-                      onClick={() => setReviewGroupPageIndex(reviewGroupPage.page + 1)}
-                      type="button"
-                    >
-                      Next groups
-                    </button>
-                  </div>
-                  <ul className="manifest-list">
-                    {reviewGroupPage.items.map((group) => (
-                      <li
-                        key={group.groupId}
-                        className={`manifest-list__item manifest-list__item--stacked ${
-                          selectedDuplicateGroup?.groupId === group.groupId
-                            ? 'manifest-list__item--selected'
-                            : ''
-                        }`}
-                      >
-                        <div
-                          className="review-item-main"
-                          onClick={() => setSelectedDuplicateGroupId(group.groupId)}
-                        >
-                          <strong>{group.representativeName}</strong>
-                          <p>
-                            {group.itemCount} items | {group.certainty}
-                          </p>
-                          <p>
-                            Keeper:{' '}
-                            {group.selectedKeeperEntryId ??
-                              group.recommendedKeeperEntryId ??
-                              'Select a keeper'}
-                          </p>
-                          {group.recommendedKeeperConfidence !== null ? (
-                            <p>{formatConfidence(group.recommendedKeeperConfidence)}</p>
-                          ) : null}
-                          {group.recommendedKeeperReasonTags.length > 0 ? (
-                            <p>Why: {group.recommendedKeeperReasonTags.join(' | ')}</p>
-                          ) : null}
-                          {group.recommendedKeeperReason ? (
-                            <p>{group.recommendedKeeperReason}</p>
-                          ) : null}
-                        </div>
-                        <div className="button-row button-row--compact">
-                          {group.memberEntryIds.map((entryId) => (
-                            <button
-                              key={entryId}
-                              className={`action-button action-button--secondary ${
-                                group.selectedKeeperEntryId === entryId ? 'action-button--selected' : ''
-                              }`}
-                              disabled={isUpdatingReview}
-                              onClick={() => handleSetDuplicateKeeper(group, entryId)}
-                              type="button"
-                            >
-                              {group.selectedKeeperEntryId === entryId ? 'Keeper' : `Keep ${entryId}`}
-                            </button>
-                          ))}
-                          <button
-                            className="action-button"
-                            disabled={isUpdatingReview || group.selectedKeeperEntryId === null}
-                            onClick={() => handleReviewDecision(group.memberActionIds, 'approve')}
-                            type="button"
-                          >
-                            Approve group
-                          </button>
-                          <button
-                            className="action-button action-button--secondary"
-                            disabled={isUpdatingReview}
-                            onClick={() => handleReviewDecision(group.memberActionIds, 'reject')}
-                            type="button"
-                          >
-                            Reject group
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  {selectedDuplicateGroup ? (
-                    <div className="detail-stack">
-                      <header className="status-card__header">
-                        <div>
-                          <p className="status-card__eyebrow">Keeper confidence</p>
-                          <h3>{selectedDuplicateGroup.representativeName}</h3>
-                        </div>
-                        <span className="status-pill status-pill--neutral">
-                          {duplicateGroupDetails?.members.length ?? selectedDuplicateGroup.itemCount} files
-                        </span>
-                      </header>
-                      <p className="status-card__summary">
-                        Compare paths, timestamps, and sizes before you commit to a keeper.
-                        Safepath's recommendation is only a starting point.
-                      </p>
-                      {selectedDuplicateGroup.recommendedKeeperReason ? (
-                        <p className="status-card__summary">
-                          Suggested keeper: {selectedDuplicateGroup.recommendedKeeperEntryId ?? 'none yet'}.
-                          {' '}
-                          {selectedDuplicateGroup.recommendedKeeperReason}
-                        </p>
-                      ) : null}
-                      {selectedDuplicateGroup.recommendedKeeperConfidence !== null ? (
-                        <p className="status-card__summary">
-                          {formatConfidence(selectedDuplicateGroup.recommendedKeeperConfidence)}
-                        </p>
-                      ) : null}
-                      {selectedDuplicateGroup.recommendedKeeperReasonTags.length > 0 ? (
-                        <p className="status-card__summary">
-                          Reason tags: {selectedDuplicateGroup.recommendedKeeperReasonTags.join(' | ')}
-                        </p>
-                      ) : null}
-                      {isLoadingDuplicateGroupDetails ? (
-                        <p className="status-card__summary">Loading duplicate details…</p>
-                      ) : duplicateGroupDetails ? (
-                        <ul className="manifest-list">
-                          {duplicateGroupDetails.members.map((member) => (
-                            <li
-                              key={member.entryId}
-                              className="manifest-list__item manifest-list__item--stacked"
-                            >
-                              <div>
-                                <strong>{member.name}</strong>
-                                <p>{member.path}</p>
-                                <p>
-                                  {formatBytes(member.sizeBytes)} | Modified{' '}
-                                  {formatTimestamp(member.modifiedAtEpochMs)} | Created{' '}
-                                  {formatTimestamp(member.createdAtEpochMs)}
-                                </p>
-                                {member.mediaDateSource ? (
-                                  <p>
-                                    Media date {formatTimestamp(member.mediaDateEpochMs)} from{' '}
-                                    {formatMediaDateSource(member.mediaDateSource)}
-                                  </p>
-                                ) : null}
-                                <p>
-                                  Review state: {member.reviewState ?? 'not tracked'}
-                                  {member.isRecommendedKeeper ? ' | suggested keeper' : ''}
-                                  {member.isSelectedKeeper ? ' | selected keeper' : ''}
-                                </p>
-                              </div>
-                              <div className="button-row button-row--compact">
-                                <button
-                                  className={`action-button action-button--secondary ${
-                                    member.isSelectedKeeper ? 'action-button--selected' : ''
-                                  }`}
-                                  disabled={isUpdatingReview}
-                                  onClick={() =>
-                                    handleSetDuplicateKeeper(selectedDuplicateGroup, member.entryId)
-                                  }
-                                  type="button"
-                                >
-                                  {member.isSelectedKeeper ? 'Keeper selected' : 'Use as keeper'}
-                                </button>
-                                <button
-                                  className="action-button action-button--secondary"
-                                  onClick={() => void handleRevealPath(member.path)}
-                                  type="button"
-                                >
-                                  Reveal path
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="status-card__summary">
-                          Pick a duplicate group to inspect its members in more detail.
-                        </p>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="status-card">
-                <header className="status-card__header">
-                  <div>
-                    <p className="status-card__eyebrow">Destination selection</p>
-                    <h3>Destination folder</h3>
-                  </div>
-                  <span className="status-pill status-pill--neutral">
-                    {draftDestinationPath ? 'configured' : 'missing'}
-                  </span>
-                </header>
-                <label className="field-label" htmlFor="destination-path">
-                  Enter the primary destination folder
-                </label>
-                <input
-                  id="destination-path"
-                  className="text-input"
-                  placeholder="/Users/siggewidmark/Organized"
-                  value={destinationInput}
-                  onChange={(event) => setDestinationInput(event.target.value)}
-                />
-                <p className="status-card__summary">
-                  Sprint 1 uses a single destination root explicitly. The backend still keeps a
-                  destination path list so future modes can expand this safely.
-                </p>
-                {status && status.destinationPaths.length > 1 ? (
-                  <p className="status-card__summary">
-                    {status.destinationPaths.length - 1} extra stored destination path
-                    {status.destinationPaths.length - 1 === 1 ? '' : 's'} will be ignored until a
-                    future multi-destination mode exists.
-                  </p>
-                ) : null}
-              </div>
-              {manifestPage ? (
-                <div className="status-card">
-                  <header className="status-card__header">
-                    <div>
-                      <p className="status-card__eyebrow">Manifest page</p>
-                      <h3>
-                        Page {manifestPage.page + 1}
-                        {manifestPage.totalPages > 0 ? ` / ${manifestPage.totalPages}` : ''}
-                      </h3>
-                    </div>
-                    <span className="status-pill status-pill--neutral">
-                      {manifestPage.totalEntries} entries
-                    </span>
-                  </header>
-                  {manifestPage.entries.length > 0 ? (
-                    <p className="status-card__summary">
-                      Showing {manifestPage.page * manifestPage.pageSize + 1}-
-                      {manifestPage.page * manifestPage.pageSize + manifestPage.entries.length} of{' '}
-                      {manifestPage.totalEntries} manifest entries.
-                    </p>
-                  ) : null}
-                  <div className="button-row">
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={manifestPage.page === 0}
-                      onClick={() => setManifestPageIndex(manifestPage.page - 1)}
-                      type="button"
-                    >
-                      Previous page
-                    </button>
-                    <button
-                      className="action-button action-button--secondary"
-                      disabled={
-                        manifestPage.totalPages === 0 ||
-                        manifestPage.page >= manifestPage.totalPages - 1
-                      }
-                      onClick={() => setManifestPageIndex(manifestPage.page + 1)}
-                      type="button"
-                    >
-                      Next page
-                    </button>
-                  </div>
-                  <ul className="manifest-list">
-                    {manifestPage.entries.map((entry) => (
-                      <li key={entry.entryId} className="manifest-list__item">
-                        <div>
-                          <strong>{entry.name}</strong>
-                          <p>{entry.relativePath}</p>
-                          {entry.mediaDateSource ? (
-                            <p>
-                              Media date {formatTimestamp(entry.mediaDateEpochMs)} from{' '}
-                              {formatMediaDateSource(entry.mediaDateSource)}
-                            </p>
-                          ) : null}
-                        </div>
-                        <span>{entry.entryKind}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="empty-card">
-                  <strong>No manifest page yet</strong>
-                  <p>After a scan starts, Safepath will page raw manifest rows into this panel.</p>
-                </div>
-              )}
-              {analysisSummary ? (
-                <>
-                  <div className="status-card">
-                    <header className="status-card__header">
-                      <div>
-                        <p className="status-card__eyebrow">Duplicate groups</p>
-                        <h3>{analysisSummary.likelyDuplicateGroups.length} groups</h3>
-                      </div>
-                    </header>
-                    {analysisSummary.likelyDuplicateGroups.length > 0 ? (
-                      <>
-                        <p className="status-card__summary">
-                          Showing {analysisDuplicatePage.rangeStart}-{analysisDuplicatePage.rangeEnd}{' '}
-                          of {analysisDuplicatePage.totalItems} detected duplicate group
-                          {analysisDuplicatePage.totalItems === 1 ? '' : 's'}.
-                        </p>
-                        <div className="button-row">
-                          <button
-                            className="action-button action-button--secondary"
-                            disabled={analysisDuplicatePage.page === 0}
-                            onClick={() =>
-                              setAnalysisDuplicatePageIndex(analysisDuplicatePage.page - 1)
-                            }
-                            type="button"
-                          >
-                            Previous groups
-                          </button>
-                          <button
-                            className="action-button action-button--secondary"
-                            disabled={
-                              analysisDuplicatePage.totalPages === 0 ||
-                              analysisDuplicatePage.page >= analysisDuplicatePage.totalPages - 1
-                            }
-                            onClick={() =>
-                              setAnalysisDuplicatePageIndex(analysisDuplicatePage.page + 1)
-                            }
-                            type="button"
-                          >
-                            Next groups
-                          </button>
-                        </div>
-                        <ul className="manifest-list">
-                          {analysisDuplicatePage.items.map((group) => (
-                          <li key={group.groupId} className="manifest-list__item">
-                            <div>
-                              <strong>{group.representativeName}</strong>
-                              <p>
-                                {group.itemCount} items with {group.certainty} duplicate certainty.
-                              </p>
-                            </div>
-                            <span>{group.certainty}</span>
-                          </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <p className="status-card__summary">No duplicate groups detected yet.</p>
-                    )}
-                  </div>
+        </div>
+      ) : null}
 
-                  <div className="status-card">
-                    <header className="status-card__header">
-                      <div>
-                        <p className="status-card__eyebrow">Protection badges</p>
-                        <h3>{analysisSummary.detectedProtections.length} detected paths</h3>
-                      </div>
-                    </header>
-                    {analysisSummary.detectedProtections.length > 0 ? (
-                      <>
-                        <p className="status-card__summary">
-                          Showing {protectionPage.rangeStart}-{protectionPage.rangeEnd} of{' '}
-                          {protectionPage.totalItems} detected protection path
-                          {protectionPage.totalItems === 1 ? '' : 's'}.
-                        </p>
-                        <div className="button-row">
-                          <button
-                            className="action-button action-button--secondary"
-                            disabled={protectionPage.page === 0}
-                            onClick={() => setProtectionPageIndex(protectionPage.page - 1)}
-                            type="button"
-                          >
-                            Previous paths
-                          </button>
-                          <button
-                            className="action-button action-button--secondary"
-                            disabled={
-                              protectionPage.totalPages === 0 ||
-                              protectionPage.page >= protectionPage.totalPages - 1
-                            }
-                            onClick={() => setProtectionPageIndex(protectionPage.page + 1)}
-                            type="button"
-                          >
-                            Next paths
-                          </button>
-                        </div>
-                        <ul className="manifest-list">
-                          {protectionPage.items.map((detection: ProtectionDetectionDto) => (
-                            <li key={detection.path} className="manifest-list__item manifest-list__item--stacked">
-                              <div>
-                                <strong>{detection.path}</strong>
-                                <p>{detection.reasons[0] ?? 'Protected path detected.'}</p>
-                              </div>
-                              <div className="button-row button-row--compact">
-                                <span className="status-pill status-pill--neutral">{detection.state}</span>
-                                <button
-                                  className="action-button action-button--secondary"
-                                  onClick={() => handleProtectPath(detection.path)}
-                                  disabled={isOverridden(detection.path)}
-                                  type="button"
-                                >
-                                  {isOverridden(detection.path) ? 'Protected' : 'Mark protected'}
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <p className="status-card__summary">No project or protection markers detected yet.</p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="empty-card">
-                  <strong>Analysis pending</strong>
-                  <p>After a scan completes, cheap analysis results will appear here.</p>
-                </div>
-              )}
-            </div>
-          }
+      {activeNav === 'presets' ? (
+        <PresetsView
+          presets={presets}
+          selectedPresetId={selectedPresetId}
+          onSelectPreset={setSelectedPresetId}
+          onUsePreset={() => setActiveNav('workflow')}
         />
-      )}
-    </div>
+      ) : null}
+
+      {activeNav === 'review' && !plan ? (
+        <div className="mx-auto flex max-w-lg flex-col gap-6">
+          <WorkflowStepper activeIndex={workflowStepperActiveIndex} className="px-2" />
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center backdrop-blur-xl">
+            <h2 className="text-xl font-semibold text-white">No plan yet</h2>
+            <p className="mt-3 text-sm text-white/65">
+              The same guided steps run on <strong className="text-white/85">Home</strong>. Use Home
+              to move from prepare through scan, signals, plan, execute, and done.{' '}
+              <strong className="text-white/85">Review</strong> is a shortcut to this workspace once
+              you have a plan, so you can jump back without hunting for the right phase on Home.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {showExecutingMain && executionSession ? (
+        <WorkflowExecutingScreen
+          session={executionSession}
+          planLabel={plan?.presetName ?? 'Plan'}
+          workflowStepperActiveIndex={workflowStepperActiveIndex}
+          uiMode={uiMode}
+        />
+      ) : null}
+
+      {showCompletionMain && executionSession ? (
+        <WorkflowCompletionScreen
+          session={executionSession}
+          planLabel={plan?.presetName ?? 'Plan'}
+          workflowStepperActiveIndex={workflowStepperActiveIndex}
+          uiMode={uiMode}
+          onBackToReview={() => setWorkflowStep('workspace')}
+          onViewHistory={() => setActiveNav('history')}
+          onStartNewScan={() => void handleStartOver()}
+        />
+      ) : null}
+
+      {showPlanWorkspace ? (
+        <PlanReviewWorkspace
+          showHomeStageIntro={activeNav === 'workflow'}
+          scanStatus={scanStatus}
+          status={status}
+          sourceInput={sourceInput}
+          setSourceInput={setSourceInput}
+          handleCheckReadiness={() => void handleCheckReadiness()}
+          isCheckingReadiness={isCheckingReadiness}
+          handleStartScan={() => void handleStartScan()}
+          canAttemptScan={canAttemptScan}
+          isStartingScan={isStartingScan}
+          handleCancelScan={() => void handleCancelScan()}
+          uiMode={uiMode}
+          analysisSummary={analysisSummary}
+          plan={plan}
+          scanProgress={scanProgress}
+          isRunningExpensiveAnalysis={isRunningExpensiveAnalysis}
+          handleRunExpensiveAnalysis={() => void handleRunExpensiveAnalysis()}
+          selectedPresetId={selectedPresetId}
+          setSelectedPresetId={setSelectedPresetId}
+          presets={presets}
+          workflowPreferenceSuggestions={workflowPreferenceSuggestions}
+          isBuildingPlan={isBuildingPlan}
+          handleBuildPlan={() => void handleBuildPlan()}
+          destinationImpactPreview={destinationImpactPreview}
+          visibleDestinationPreviewFolders={visibleDestinationPreviewFolders}
+          showAllDestinationPreviewFolders={showAllDestinationPreviewFolders}
+          setShowAllDestinationPreviewFolders={setShowAllDestinationPreviewFolders}
+          approvedActionCount={approvedActionCount}
+          hasExecutionPreflightErrors={hasExecutionPreflightErrors}
+          executionPreflightWarnings={executionPreflightWarnings}
+          executionPreflightIssues={executionPreflightIssues}
+          isLoadingExecutionPreflight={isLoadingExecutionPreflight}
+          loadExecutionPreflight={loadExecutionPreflight}
+          executionIsActive={executionIsActive}
+          handleExecutePlan={() => void handleExecutePlan()}
+          reviewBucketRows={reviewBucketRows}
+          activeReviewBucket={activeReviewBucket}
+          setActiveReviewBucket={setActiveReviewBucket}
+          reviewActionPage={reviewActionPage}
+          handleChangeReviewPage={handleChangeReviewPage}
+          selectedAction={selectedAction}
+          setSelectedActionId={setSelectedActionId}
+          handleReviewDecision={handleReviewDecision}
+          isUpdatingReview={isUpdatingReview}
+          executionSession={executionSession}
+          executionRecordPage={executionRecordPage}
+          setExecutionRecordPageIndex={setExecutionRecordPageIndex}
+          reviewGroupPage={reviewGroupPage}
+          setReviewGroupPageIndex={setReviewGroupPageIndex}
+          selectedDuplicateGroup={selectedDuplicateGroup}
+          setSelectedDuplicateGroupId={setSelectedDuplicateGroupId}
+          duplicateGroupDetails={duplicateGroupDetails}
+          isLoadingDuplicateGroupDetails={isLoadingDuplicateGroupDetails}
+          handleSetDuplicateKeeper={handleSetDuplicateKeeper}
+          handleRevealPath={handleRevealPath}
+          draftDestinationPath={draftDestinationPath}
+          destinationInput={destinationInput}
+          setDestinationInput={setDestinationInput}
+          manifestPage={manifestPage}
+          setManifestPageIndex={setManifestPageIndex}
+          analysisDuplicatePage={analysisDuplicatePage}
+          setAnalysisDuplicatePageIndex={setAnalysisDuplicatePageIndex}
+          protectionPage={protectionPage}
+          setProtectionPageIndex={setProtectionPageIndex}
+          handleProtectPath={handleProtectPath}
+          isOverridden={isOverridden}
+          handleApplyStructureProtection={handleApplyStructureProtection}
+          phaseLabel={phaseLabel}
+          workflowStepperActiveIndex={workflowStepperActiveIndex}
+        />
+      ) : null}
+
+      {activeNav === 'workflow' && workflowStep === 'setup' ? (
+        <WorkflowSetupScreen
+          status={status}
+          sourceInput={sourceInput}
+          destinationInput={destinationInput}
+          onSourceChange={setSourceInput}
+          onDestinationChange={setDestinationInput}
+          onCheckReadiness={() => void handleCheckReadiness()}
+          onStartScan={() => void handleStartScan()}
+          isCheckingReadiness={isCheckingReadiness}
+          isStartingScan={isStartingScan}
+          canAttemptScan={canAttemptScan}
+          workflowStepperActiveIndex={workflowStepperActiveIndex}
+          uiMode={uiMode}
+        />
+      ) : null}
+
+      {activeNav === 'workflow' && workflowStep === 'scanning' && scanStatus ? (
+        <WorkflowScanningScreen
+          scanStatus={scanStatus}
+          scanProgress={scanProgress}
+          onCancel={() => void handleCancelScan()}
+          workflowStepperActiveIndex={workflowStepperActiveIndex}
+          uiMode={uiMode}
+        />
+      ) : null}
+
+      {activeNav === 'workflow' && workflowStep === 'results' && scanStatus ? (
+        <WorkflowResultsScreen
+          scanStatus={scanStatus}
+          analysisSummary={analysisSummary}
+          presets={presets}
+          selectedPresetId={selectedPresetId}
+          onPresetChange={setSelectedPresetId}
+          onBuildPlan={() => void handleBuildPlan()}
+          isBuildingPlan={isBuildingPlan}
+          onRunExpensiveAnalysis={() => void handleRunExpensiveAnalysis()}
+          isRunningExpensiveAnalysis={isRunningExpensiveAnalysis}
+          activeAnalysisJobId={activeAnalysisJobId}
+          onContinueToWorkspace={() => setWorkflowStep('workspace')}
+          hasPlan={!!plan}
+          uiMode={uiMode}
+          workflowPreferenceSuggestions={workflowPreferenceSuggestions}
+          aiAssistedSuggestions={analysisSummary?.aiAssistedSuggestions ?? []}
+          selectedPresetIdForAi={selectedPresetId}
+          onApplyAiPreset={setSelectedPresetId}
+          onApplyStructureProtection={handleApplyStructureProtection}
+          isOverridden={isOverridden}
+          workflowStepperActiveIndex={workflowStepperActiveIndex}
+        />
+      ) : null}
+    </AppLayout>
   )
 }
 

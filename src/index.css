@@ -1,71 +1,64 @@
-:root {
-  --bg: #101117;
-  --bg-accent: radial-gradient(circle at top, rgba(64, 121, 255, 0.15), transparent 38%);
-  --panel-bg: rgba(20, 23, 31, 0.92);
-  --chip-bg: rgba(255, 255, 255, 0.03);
-  --border: rgba(255, 255, 255, 0.12);
-  --border-soft: rgba(255, 255, 255, 0.08);
-  --text-strong: #f5f7fa;
-  --text-dim: #a4adbb;
-  --text-muted: #7f8896;
-  --accent: #68a8ff;
-  --accent-bg: rgba(104, 168, 255, 0.14);
-  --accent-border: rgba(104, 168, 255, 0.32);
-  --success-text: #83d4b8;
-  --success-bg: rgba(56, 161, 105, 0.12);
-  --success-border: rgba(56, 161, 105, 0.28);
-  --warning-text: #f0c27c;
-  --warning-bg: rgba(240, 154, 55, 0.14);
-  --warning-border: rgba(240, 154, 55, 0.32);
-  --panel-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+@import 'tailwindcss';
 
-  color-scheme: dark;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--bg);
-  color: var(--text-strong);
-}
+@layer base {
+  :root {
+    color-scheme: dark;
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-* {
-  box-sizing: border-box;
-}
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
 
-html,
-body,
-#root {
-  min-height: 100vh;
-}
+  html,
+  body,
+  #root {
+    min-height: 100vh;
+    margin: 0;
+  }
 
-body {
-  margin: 0;
-  background:
-    var(--bg-accent),
-    linear-gradient(180deg, #101117 0%, #0c0d12 100%);
-}
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 
-#root {
-  min-height: 100vh;
-}
+  h1,
+  h2,
+  h3,
+  p,
+  ul,
+  dl {
+    margin: 0;
+  }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
+  button:focus-visible,
+  a:focus-visible,
+  [role='tab']:focus-visible,
+  textarea:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid rgb(167 139 250);
+    outline-offset: 2px;
+  }
 
-h1,
-h2,
-h3,
-p,
-ul,
-dl {
-  margin: 0;
+  /* Legacy workflow shell (CSS modules / BEM) — match app focus ring */
+  .workflow-legacy button:focus-visible,
+  .workflow-legacy textarea:focus-visible,
+  .workflow-legacy input:focus-visible,
+  .workflow-legacy select:focus-visible {
+    outline: 2px solid rgb(167 139 250);
+    outline-offset: 2px;
+  }
 }

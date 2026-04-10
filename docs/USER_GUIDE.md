@@ -20,6 +20,30 @@ Safepath works in clear phases:
 
 Safepath is intentionally guided. It is not designed to silently reorganize a whole disk without review.
 
+## How the app maps to these steps
+
+The desktop shell uses **Home**, **Review**, **History**, **Presets**, and **Settings**. The numbered flow above lines up with Home and Review like this:
+
+| Guide steps | What you are doing | Where it shows up |
+|-------------|--------------------|-------------------|
+| 1–3 | Pick sources and destination, run readiness checks, start a scan | **Home** — setup, then the scanning screen while the job runs |
+| 4 | Review analysis signals (duplicates, protections, clutter hints) | **Home** — “scan complete” results before a plan exists |
+| 5–7 | Build a plan from a preset, approve or reject actions, pick duplicate keepers, read execution checks | **Home** — after you continue into the plan workspace, or **Review** — same workspace once a plan exists |
+| 8 | Execute approved moves | **Home** or **Review** — execution progress replaces the workspace while a run is active |
+| 9 | Inspect history and use undo when available | **History** |
+
+**Presets** is a dedicated place to read preset descriptions and sync your chosen preset with Home. **Settings** holds technical options and experiments; it does not replace the guided steps on Home.
+
+**Simple** and **Advanced** mode use the same stages. In **Simple**, technical panels stay **fully hidden** until you switch to **Advanced** — including deep duplicate hashing on the results screen, manifest paging, raw scan job and session IDs in the UI, per-category breakdown tables, and action/duplicate debug lines. **Advanced** shows the full review surfaces and technical readouts described in this guide.
+
+On **Home** in **Simple** mode, folder access and readiness show up as the same guided checklist you use before scanning — **Check readiness** plus short path hints — rather than the full technical permission-readiness card you see in **Advanced**. The underlying steps do not change: add at least one source and a destination, run checks, then start the scan.
+
+On **Home** in **Simple** mode, a **step card** under the progress strip spells out where you are (for example “Step 1 of 6 · Prepare”) and one line of what to do next, using the same six stages as the strip.
+
+**Review** is a **shortcut** to the plan workspace once you have a plan — the same steps still run on **Home**; Review does not replace that path.
+
+On **Home** (and on **Review** when it applies), a compact **progress strip** under the main heading mirrors the same six stages: Prepare → Scan → Signals → Plan & review → Execute → Done. It stays in sync with the phase label in the app header.
+
 ## What a plan means
 
 A plan is Safepath's best current proposal for what should happen to the files it scanned.
