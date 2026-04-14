@@ -2,5 +2,5 @@
   "identifier": "default",
   "description": "Capability for the Safepath main window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:allow-open"]
 }

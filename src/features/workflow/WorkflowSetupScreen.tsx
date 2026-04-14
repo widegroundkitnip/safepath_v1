@@ -12,9 +12,11 @@ type WorkflowSetupScreenProps = {
   destinationInput: string
   onSourceChange: (value: string) => void
   onDestinationChange: (value: string) => void
-  onCheckReadiness: () => void
+  onBrowseSource: () => void
+  onBrowseDestination: () => void
   onStartScan: () => void
-  isCheckingReadiness: boolean
+  isBrowsingSource: boolean
+  isBrowsingDestination: boolean
   isStartingScan: boolean
   canAttemptScan: boolean
   workflowStepperActiveIndex: number
@@ -27,9 +29,11 @@ export function WorkflowSetupScreen({
   destinationInput,
   onSourceChange,
   onDestinationChange,
-  onCheckReadiness,
+  onBrowseSource,
+  onBrowseDestination,
   onStartScan,
-  isCheckingReadiness,
+  isBrowsingSource,
+  isBrowsingDestination,
   isStartingScan,
   canAttemptScan,
   workflowStepperActiveIndex,
@@ -77,6 +81,17 @@ export function WorkflowSetupScreen({
           placeholder="/Users/you/Downloads"
           className="w-full resize-y rounded-2xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-white/35"
         />
+        <div className="button-row button-row--compact">
+          <button
+            type="button"
+            onClick={onBrowseSource}
+            disabled={isBrowsingSource}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+          >
+            {isBrowsingSource ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {isBrowsingSource ? 'Opening…' : 'Browse source folder'}
+          </button>
+        </div>
         {draftSourceLines.length > 0 && uiMode === 'advanced' ? (
           <p className="mt-2 text-xs text-white/50">{draftSourceLines.length} path(s) ready</p>
         ) : null}
@@ -94,6 +109,17 @@ export function WorkflowSetupScreen({
           placeholder="/Users/you/Organized"
           className="w-full rounded-2xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-white/35"
         />
+        <div className="button-row button-row--compact">
+          <button
+            type="button"
+            onClick={onBrowseDestination}
+            disabled={isBrowsingDestination}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+          >
+            {isBrowsingDestination ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {isBrowsingDestination ? 'Opening…' : 'Browse destination folder'}
+          </button>
+        </div>
       </div>
 
       {status ? (
@@ -118,22 +144,11 @@ export function WorkflowSetupScreen({
         ) : (
           <div className="flex items-center gap-2 text-sm text-amber-200/90">
             <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
-            Add sources, destination, and pass readiness checks
+            Add at least one source and one destination folder
           </div>
         )}
 
         <div className="flex w-full max-w-md flex-col gap-3 sm:flex-row sm:justify-center">
-          <button
-            type="button"
-            onClick={onCheckReadiness}
-            disabled={isCheckingReadiness}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-white/10 disabled:opacity-50"
-          >
-            {isCheckingReadiness ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            ) : null}
-            {isCheckingReadiness ? 'Checking…' : 'Check readiness'}
-          </button>
           <button
             type="button"
             onClick={onStartScan}

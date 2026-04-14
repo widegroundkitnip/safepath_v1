@@ -268,6 +268,12 @@
   border-color: var(--success-border);
 }
 
+.action-button--active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -317,6 +323,59 @@
 
 .manifest-list__item--stacked {
   align-items: flex-start;
+}
+
+.action-selection-slot {
+  width: 30px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.action-selection-toggle {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.action-selection-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.action-selection-toggle__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: transparent;
+  transform: scale(0.6);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.action-selection-toggle--selected {
+  border-color: rgba(190, 164, 255, 0.98);
+  background: rgba(160, 123, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(98, 61, 201, 0.45);
+}
+
+.action-selection-toggle--selected .action-selection-toggle__dot {
+  background: rgba(241, 235, 255, 0.98);
+  transform: scale(1);
+}
+
+.action-selection-toggle:focus-visible {
+  outline: 2px solid rgba(233, 223, 255, 0.95);
+  outline-offset: 2px;
 }
 
 .manifest-list__item--selected {
@@ -380,8 +439,8 @@ button.review-item-main:focus-visible {
 }
 
 .synthetic-checkbox {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
   gap: 8px;
   color: var(--text-dim);
   font-size: 13px;

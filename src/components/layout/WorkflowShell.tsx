@@ -23,19 +23,24 @@ function ColumnPanel({ title, subtitle, aside, children }: ColumnProps) {
 
 interface WorkflowShellProps {
   centerHeader?: ReactNode
-  left: ReactNode
+  left?: ReactNode
   center: ReactNode
   right: ReactNode
 }
 
 export function WorkflowShell({ centerHeader, left, center, right }: WorkflowShellProps) {
+  const gridColumns = left
+    ? 'grid-cols-[minmax(260px,320px)_minmax(0,1fr)_minmax(260px,320px)]'
+    : 'grid-cols-[minmax(0,1fr)_minmax(260px,320px)]'
   return (
-    <main className="workflow-shell grid min-h-0 flex-1 grid-cols-[minmax(260px,320px)_minmax(0,1fr)_minmax(260px,320px)] gap-4">
-      <aside className="workflow-shell__column workflow-shell__column--side">
-        <ColumnPanel title="Sources" subtitle="What to scan">
-          {left}
-        </ColumnPanel>
-      </aside>
+    <main className={`workflow-shell grid min-h-0 flex-1 ${gridColumns} gap-4`}>
+      {left ? (
+        <aside className="workflow-shell__column workflow-shell__column--side">
+          <ColumnPanel title="Sources" subtitle="What to scan">
+            {left}
+          </ColumnPanel>
+        </aside>
+      ) : null}
 
       <section className="workflow-shell__column workflow-shell__column--center">
         <ColumnPanel title="Plan / Queue" subtitle="What Safepath will do" aside={centerHeader}>

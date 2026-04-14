@@ -57,7 +57,7 @@ export function PresetsView({
         disabled={!selectedPresetId}
         className="rounded-2xl bg-gradient-to-r from-violet-500 to-blue-500 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        Done — return to Home
+        Use preset and continue
       </button>
     </div>
   )

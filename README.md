@@ -65,6 +65,8 @@ For a user-facing explanation of Safepath's workflow and trust language, see [`d
 
 For **how to run tests and manual checks on your machine** (Vitest, Playwright, Cargo, dev vs Tauri), see [`docs/TESTING.md`](docs/TESTING.md).
 
+For **building a macOS `.dmg` installer on your Mac**, see [`docs/MAC_INSTALLER.md`](docs/MAC_INSTALLER.md) (or run `./scripts/build-mac-installer.sh`).
+
 Useful commands:
 
 - `npm run dev`: Vite browser shell only

@@ -29,6 +29,7 @@ import {
   getLearnerObservations,
   getLearnerSuggestions,
   getManifestPage,
+  pickFolder,
   getPlan,
   isDesktopRuntimeAvailable,
   messageFromInvokeError,
@@ -97,7 +98,6 @@ import {
   REVIEW_ACTION_PAGE_SIZE,
   REVIEW_GROUP_PAGE_SIZE,
   type ReviewBucket,
-  SYNTHETIC_SIZE_OPTIONS,
 } from './features/app/shared'
 
 function App() {
@@ -142,7 +142,8 @@ function App() {
   const [activeReviewBucket, setActiveReviewBucket] = useState<ReviewBucket>('all')
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null)
   const [isStartingScan, setIsStartingScan] = useState(false)
-  const [isCheckingReadiness, setIsCheckingReadiness] = useState(false)
+  const [isBrowsingSource, setIsBrowsingSource] = useState(false)
+  const [isBrowsingDestination, setIsBrowsingDestination] = useState(false)
   const [isRunningExpensiveAnalysis, setIsRunningExpensiveAnalysis] = useState(false)
   const [activeAnalysisJobId, setActiveAnalysisJobId] = useState<string | null>(null)
   const [isBuildingPlan, setIsBuildingPlan] = useState(false)
@@ -174,7 +175,7 @@ function App() {
   const [syntheticIncludeHiddenFiles, setSyntheticIncludeHiddenFiles] = useState(true)
   const [syntheticIncludeEmptyFolders, setSyntheticIncludeEmptyFolders] = useState(true)
   const [syntheticTargetApparentSizeBytes, setSyntheticTargetApparentSizeBytes] = useState(
-    SYNTHETIC_SIZE_OPTIONS[1].bytes,
+    1024 ** 4,
   )
   const [isGeneratingSyntheticData, setIsGeneratingSyntheticData] = useState(false)
   const [isSyntheticSourcePending, setIsSyntheticSourcePending] = useState(false)
@@ -187,10 +188,7 @@ function App() {
     () => (draftDestinationPath ? [draftDestinationPath] : []),
     [draftDestinationPath],
   )
-  const canAttemptScan =
-    draftSourcePaths.length > 0 &&
-    draftDestinationPaths.length > 0 &&
-    status?.permissionsReadiness.state === 'ready'
+  const canAttemptScan = draftSourcePaths.length > 0 && draftDestinationPaths.length > 0
   const filteredPlanActions = useMemo(() => {
     if (!plan) {
       return []
@@ -914,19 +912,54 @@ function App() {
     return nextStatus
   }
 
-  async function handleCheckReadiness() {
+  async function handleBrowseSourceFolder() {
     setError(null)
-    setIsCheckingReadiness(true)
-
+    setIsBrowsingSource(true)
     try {
-      const nextStatus = await syncSelections()
-      if (nextStatus.permissionsReadiness.state !== 'ready') {
-        setError(nextStatus.permissionsReadiness.summary)
+      const selected = await pickFolder()
+      if (!selected) {
+        return
+      }
+      const nextSourcePaths = Array.from(new Set([...draftSourcePaths, selected]))
+      setSourceInput(nextSourcePaths.join('\n'))
+      const nextStatus = await syncSelections(nextSourcePaths, draftDestinationPaths)
+      setStatus(nextStatus)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to select source folder.')
+    } finally {
+      setIsBrowsingSource(false)
+    }
+  }
+
+  async function handleBrowseDestinationFolder() {
+    setError(null)
+    setIsBrowsingDestination(true)
+    try {
+      const selected = await pickFolder()
+      if (!selected) {
+        return
+      }
+      setDestinationInput(selected)
+      const nextStatus = await syncSelections(draftSourcePaths, [selected])
+      setStatus(nextStatus)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to select destination folder.')
+    } finally {
+      setIsBrowsingDestination(false)
+    }
+  }
+
+  async function handleBrowseSyntheticOutputFolder() {
+    setError(null)
+    try {
+      const selected = await pickFolder()
+      if (selected) {
+        setSyntheticOutputRoot(selected)
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to update path selection.')
-    } finally {
-      setIsCheckingReadiness(false)
+      setError(
+        nextError instanceof Error ? nextError.message : 'Failed to select synthetic output folder.',
+      )
     }
   }
 
@@ -1575,6 +1608,7 @@ function App() {
           activeLearnerSuggestionId={activeLearnerSuggestionId}
           activeLearnerDraftId={activeLearnerDraftId}
           onSyntheticOutputRootChange={setSyntheticOutputRoot}
+          onBrowseSyntheticOutputRoot={() => void handleBrowseSyntheticOutputFolder()}
           onSyntheticDatasetNameChange={setSyntheticDatasetName}
           onSyntheticTargetSizeChange={setSyntheticTargetApparentSizeBytes}
           onSyntheticMaxDepthChange={setSyntheticMaxDepth}
@@ -1668,14 +1702,6 @@ function App() {
           showHomeStageIntro={activeNav === 'workflow'}
           scanStatus={scanStatus}
           status={status}
-          sourceInput={sourceInput}
-          setSourceInput={setSourceInput}
-          handleCheckReadiness={() => void handleCheckReadiness()}
-          isCheckingReadiness={isCheckingReadiness}
-          handleStartScan={() => void handleStartScan()}
-          canAttemptScan={canAttemptScan}
-          isStartingScan={isStartingScan}
-          handleCancelScan={() => void handleCancelScan()}
           uiMode={uiMode}
           analysisSummary={analysisSummary}
           plan={plan}
@@ -1704,6 +1730,7 @@ function App() {
           activeReviewBucket={activeReviewBucket}
           setActiveReviewBucket={setActiveReviewBucket}
           reviewActionPage={reviewActionPage}
+          filteredActionIds={filteredPlanActions.map((action) => action.actionId)}
           handleChangeReviewPage={handleChangeReviewPage}
           selectedAction={selectedAction}
           setSelectedActionId={setSelectedActionId}
@@ -1723,6 +1750,8 @@ function App() {
           draftDestinationPath={draftDestinationPath}
           destinationInput={destinationInput}
           setDestinationInput={setDestinationInput}
+          handleBrowseDestination={() => void handleBrowseDestinationFolder()}
+          isBrowsingDestination={isBrowsingDestination}
           manifestPage={manifestPage}
           setManifestPageIndex={setManifestPageIndex}
           analysisDuplicatePage={analysisDuplicatePage}
@@ -1744,9 +1773,11 @@ function App() {
           destinationInput={destinationInput}
           onSourceChange={setSourceInput}
           onDestinationChange={setDestinationInput}
-          onCheckReadiness={() => void handleCheckReadiness()}
+          onBrowseSource={() => void handleBrowseSourceFolder()}
+          onBrowseDestination={() => void handleBrowseDestinationFolder()}
           onStartScan={() => void handleStartScan()}
-          isCheckingReadiness={isCheckingReadiness}
+          isBrowsingSource={isBrowsingSource}
+          isBrowsingDestination={isBrowsingDestination}
           isStartingScan={isStartingScan}
           canAttemptScan={canAttemptScan}
           workflowStepperActiveIndex={workflowStepperActiveIndex}

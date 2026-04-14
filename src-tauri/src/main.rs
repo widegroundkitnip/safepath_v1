@@ -109,6 +109,7 @@ impl AppState {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let store = Store::new(app_db_path(app)?)?;
             app.manage(AppState::new(store)?);

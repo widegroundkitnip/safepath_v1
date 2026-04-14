@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { AppStatusSummary } from '../../components/layout/AppStatusSummary'
 import type {
   AiEvaluationSnapshotDto,
@@ -21,7 +23,6 @@ import {
   learnerSuggestionEvidence,
   learnerSuggestionStatusLabel,
   SYNTHETIC_CATEGORY_OPTIONS,
-  SYNTHETIC_SIZE_OPTIONS,
 } from '../app/shared'
 
 interface SettingsViewProps {
@@ -52,6 +53,7 @@ interface SettingsViewProps {
   activeLearnerSuggestionId: string | null
   activeLearnerDraftId: string | null
   onSyntheticOutputRootChange: (value: string) => void
+  onBrowseSyntheticOutputRoot: () => void
   onSyntheticDatasetNameChange: (value: string) => void
   onSyntheticTargetSizeChange: (value: number) => void
   onSyntheticMaxDepthChange: (value: number) => void
@@ -95,6 +97,7 @@ export function SettingsView({
   activeLearnerSuggestionId,
   activeLearnerDraftId,
   onSyntheticOutputRootChange,
+  onBrowseSyntheticOutputRoot,
   onSyntheticDatasetNameChange,
   onSyntheticTargetSizeChange,
   onSyntheticMaxDepthChange,
@@ -109,6 +112,29 @@ export function SettingsView({
   onLearnerSuggestionFeedback,
   onSaveLearnerDraftPreview,
 }: SettingsViewProps) {
+  const [activeSettingsTab, setActiveSettingsTab] = useState<
+    'mockData' | 'ai' | 'learner' | 'observations'
+  >('mockData')
+  const syntheticTargetGb = Math.round(syntheticTargetApparentSizeBytes / 1024 ** 3)
+  const syntheticTargetLabel =
+    syntheticTargetGb >= 1024
+      ? `${(syntheticTargetGb / 1024).toFixed(syntheticTargetGb % 1024 === 0 ? 0 : 1)} TB apparent size`
+      : `${syntheticTargetGb} GB apparent size`
+  const messinessDescriptions: Record<number, string> = {
+    1: 'Light: mostly clean folders with occasional out-of-place files.',
+    2: 'Moderate: adds mixed naming and a few misplaced files.',
+    3: 'Busy: more mixed content and uneven folder structure.',
+    4: 'Messy: frequent clutter pockets and noisy folder layouts.',
+    5: 'Chaotic: heavy disorder, cross-category scatter, and naming drift.',
+  }
+  const duplicateRateDescription =
+    syntheticDuplicateRatePercent <= 5
+      ? 'Very low duplicate pressure. Most generated files are unique.'
+      : syntheticDuplicateRatePercent <= 20
+        ? 'Low duplicate pressure. A small set of repeated files is injected.'
+        : syntheticDuplicateRatePercent <= 45
+          ? 'Medium duplicate pressure. Duplicate groups appear regularly.'
+          : 'High duplicate pressure. Duplicate clusters become a major review signal.'
   return (
     <section className="settings-shell">
       <div className="placeholder-stack">
@@ -125,7 +151,49 @@ export function SettingsView({
             history while the workflow view handles live scan, review, and execution tasks.
           </p>
         </div>
-        <div className="status-card">
+        <div className="button-row button-row--compact">
+          <button
+            type="button"
+            className={`action-button action-button--secondary ${
+              activeSettingsTab === 'mockData' ? 'action-button--active' : ''
+            }`}
+            onClick={() => setActiveSettingsTab('mockData')}
+            aria-pressed={activeSettingsTab === 'mockData'}
+          >
+            Mock data
+          </button>
+          <button
+            type="button"
+            className={`action-button action-button--secondary ${
+              activeSettingsTab === 'ai' ? 'action-button--active' : ''
+            }`}
+            onClick={() => setActiveSettingsTab('ai')}
+            aria-pressed={activeSettingsTab === 'ai'}
+          >
+            AI
+          </button>
+          <button
+            type="button"
+            className={`action-button action-button--secondary ${
+              activeSettingsTab === 'learner' ? 'action-button--active' : ''
+            }`}
+            onClick={() => setActiveSettingsTab('learner')}
+            aria-pressed={activeSettingsTab === 'learner'}
+          >
+            Learner
+          </button>
+          <button
+            type="button"
+            className={`action-button action-button--secondary ${
+              activeSettingsTab === 'observations' ? 'action-button--active' : ''
+            }`}
+            onClick={() => setActiveSettingsTab('observations')}
+            aria-pressed={activeSettingsTab === 'observations'}
+          >
+            Observations
+          </button>
+        </div>
+        <div className={`status-card ${activeSettingsTab === 'ai' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">AI evaluation snapshot</p>
@@ -198,7 +266,7 @@ export function SettingsView({
             </div>
           )}
         </div>
-        <div className="status-card">
+        <div className={`status-card ${activeSettingsTab === 'mockData' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">Synthetic test data</p>
@@ -226,6 +294,13 @@ export function SettingsView({
           <div className="button-row button-row--compact">
             <button
               className="action-button action-button--secondary"
+              onClick={onBrowseSyntheticOutputRoot}
+              type="button"
+            >
+              Browse
+            </button>
+            <button
+              className="action-button action-button--secondary"
               onClick={() => onSyntheticOutputRootChange(draftDestinationPath)}
               type="button"
             >
@@ -245,20 +320,18 @@ export function SettingsView({
           <div className="synthetic-settings-grid">
             <div>
               <label className="field-label" htmlFor="synthetic-size-target">
-                Apparent size target
+                Apparent size of target
               </label>
-              <select
+              <input
                 id="synthetic-size-target"
-                className="text-input"
-                onChange={(event) => onSyntheticTargetSizeChange(Number(event.target.value))}
-                value={syntheticTargetApparentSizeBytes}
-              >
-                {SYNTHETIC_SIZE_OPTIONS.map((option) => (
-                  <option key={option.bytes} value={option.bytes}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                max={10 * 1024}
+                min={0}
+                onChange={(event) => onSyntheticTargetSizeChange(Number(event.target.value) * 1024 ** 3)}
+                step={10}
+                type="range"
+                value={syntheticTargetGb}
+              />
+              <p className="mt-2 text-xs text-white/70">{syntheticTargetLabel}</p>
             </div>
             <div>
               <label className="field-label" htmlFor="synthetic-depth">
@@ -270,7 +343,7 @@ export function SettingsView({
                 onChange={(event) => onSyntheticMaxDepthChange(Number(event.target.value))}
                 value={syntheticMaxDepth}
               >
-                {[2, 3, 4, 5, 6].map((depth) => (
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((depth) => (
                   <option key={depth} value={depth}>
                     {depth} levels
                   </option>
@@ -293,6 +366,9 @@ export function SettingsView({
                 <option value={4}>Messy</option>
                 <option value={5}>Chaotic</option>
               </select>
+              <p className="mt-2 text-xs text-white/70">
+                {messinessDescriptions[syntheticMessinessLevel] ?? messinessDescriptions[4]}
+              </p>
             </div>
             <div>
               <label className="field-label" htmlFor="synthetic-duplicate-rate">
@@ -307,6 +383,7 @@ export function SettingsView({
                 type="number"
                 value={syntheticDuplicateRatePercent}
               />
+              <p className="mt-2 text-xs text-white/70">{duplicateRateDescription}</p>
             </div>
           </div>
           <div className="synthetic-toggle-list">
@@ -330,21 +407,20 @@ export function SettingsView({
           <p className="status-card__summary">
             Categories decide which kinds of files appear in the generated tree.
           </p>
-          <div className="synthetic-category-grid">
+          <div className="synthetic-toggle-list">
             {SYNTHETIC_CATEGORY_OPTIONS.map((option) => {
               const selected = syntheticCategories.includes(option.category)
               return (
-                <button
-                  key={option.category}
-                  className={`synthetic-category-chip ${
-                    selected ? 'synthetic-category-chip--selected' : ''
-                  }`}
-                  onClick={() => onToggleSyntheticCategory(option.category)}
-                  type="button"
-                >
-                  <strong>{option.label}</strong>
-                  <span>{option.description}</span>
-                </button>
+                <label key={option.category} className="synthetic-checkbox">
+                  <input
+                    checked={selected}
+                    onChange={() => onToggleSyntheticCategory(option.category)}
+                    type="checkbox"
+                  />
+                  <span>
+                    <strong>{option.label}</strong> - {option.description}
+                  </span>
+                </label>
               )
             })}
           </div>
@@ -355,7 +431,7 @@ export function SettingsView({
               onClick={onGenerateSyntheticDataset}
               type="button"
             >
-              {isGeneratingSyntheticData ? 'Generating...' : 'Generate dataset'}
+              {isGeneratingSyntheticData ? 'Generating...' : 'Generate Dataset'}
             </button>
             <button
               className="action-button action-button--secondary"
@@ -363,7 +439,7 @@ export function SettingsView({
               onClick={onGenerateAndScanSyntheticDataset}
               type="button"
             >
-              {isGeneratingSyntheticData ? 'Preparing scan...' : 'Generate and scan'}
+              {isGeneratingSyntheticData ? 'Preparing scan...' : 'Generate Dataset and Scan'}
             </button>
           </div>
           {syntheticDatasetResult ? (
@@ -437,7 +513,7 @@ export function SettingsView({
             </div>
           ) : null}
         </div>
-        <div className="status-card">
+        <div className={`status-card ${activeSettingsTab === 'learner' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">Learner suggestions</p>
@@ -556,7 +632,7 @@ export function SettingsView({
             </div>
           )}
         </div>
-        <div className="status-card">
+        <div className={`status-card ${activeSettingsTab === 'learner' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">Draft change previews</p>
@@ -631,7 +707,7 @@ export function SettingsView({
             </div>
           )}
         </div>
-        <div className="status-card">
+        <div className={`status-card ${activeSettingsTab === 'observations' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">Learner observations</p>
@@ -684,7 +760,7 @@ export function SettingsView({
             </div>
           )}
         </div>
-        <div className="status-card">
+        <div className={`status-card ${activeSettingsTab === 'observations' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">Rule review observations</p>
@@ -737,7 +813,7 @@ export function SettingsView({
             </div>
           )}
         </div>
-        <div className="status-card">
+        <div className={`status-card ${activeSettingsTab === 'observations' ? '' : 'hidden'}`}>
           <header className="status-card__header">
             <div>
               <p className="status-card__eyebrow">Learner feedback</p>

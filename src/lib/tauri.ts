@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { open } from '@tauri-apps/plugin-dialog'
 
 import type {
   AnalysisProgressEvent,
@@ -241,6 +242,21 @@ export async function selectDestinations(paths: string[]): Promise<AppStatusDto>
     return E2E.e2eSelectDestinations(paths)
   }
   return invokeDesktop<AppStatusDto>('select_destinations', { paths })
+}
+
+export async function pickFolder(): Promise<string | null> {
+  if (E2E.isE2eMockEnabled()) {
+    return null
+  }
+  if (!hasTauriRuntime()) {
+    return null
+  }
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: 'Select folder',
+  })
+  return typeof selected === 'string' ? selected : null
 }
 
 export async function getScanStatus(jobId: string): Promise<ScanJobStatusDto | null> {

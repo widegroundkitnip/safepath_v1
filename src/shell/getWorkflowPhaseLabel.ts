@@ -19,7 +19,7 @@ export const WORKFLOW_STEPPER_LABELS = [
   'Signals',
   'Plan & review',
   'Execute',
-  'Done',
+  'Complete',
 ] as const
 
 function isWorkflowExecutionBusy(p: WorkflowPhaseLabelParams): boolean {

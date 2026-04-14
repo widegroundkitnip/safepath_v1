@@ -60,7 +60,7 @@ export function WorkflowCompletionScreen({
       </div>
 
       <div className="text-center">
-        <h2 className="text-3xl font-semibold text-white">Done</h2>
+        <h2 className="text-3xl font-semibold text-white">Run complete</h2>
         <p className="mt-2 text-sm text-white/65">{statusMessage(session.status)}</p>
         <p className="mt-1 text-xs text-white/45">Plan: {planLabel}</p>
       </div>

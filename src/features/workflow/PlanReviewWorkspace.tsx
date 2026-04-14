@@ -1,6 +1,6 @@
+import { useMemo, useState } from 'react'
 import { AppStatusSummary } from '../../components/layout/AppStatusSummary'
 import { WorkflowShell } from '../../components/layout/WorkflowShell'
-import { PermissionReadinessCard } from '../../components/permissions/PermissionReadinessCard'
 import { WorkflowHomeStageIntro } from './WorkflowHomeStageIntro'
 import { WorkflowStepper } from './WorkflowStepper'
 import type {
@@ -57,14 +57,6 @@ export type PlanReviewWorkspaceProps = {
   showHomeStageIntro?: boolean
   scanStatus: ScanJobStatusDto | null
   status: AppStatusDto | null
-  sourceInput: string
-  setSourceInput: (value: string) => void
-  handleCheckReadiness: () => void
-  isCheckingReadiness: boolean
-  handleStartScan: () => void
-  canAttemptScan: boolean
-  isStartingScan: boolean
-  handleCancelScan: () => void
   uiMode: 'simple' | 'advanced'
   analysisSummary: AnalysisSummaryDto | null
   plan: PlanDto | null
@@ -102,6 +94,7 @@ export type PlanReviewWorkspaceProps = {
   activeReviewBucket: ReviewBucket
   setActiveReviewBucket: (bucket: ReviewBucket) => void
   reviewActionPage: PaginatedSlice<PlannedActionDto>
+  filteredActionIds: string[]
   handleChangeReviewPage: (page: number) => void
   selectedAction: PlannedActionDto | null
   setSelectedActionId: (actionId: string | null) => void
@@ -121,6 +114,8 @@ export type PlanReviewWorkspaceProps = {
   draftDestinationPath: string
   destinationInput: string
   setDestinationInput: (value: string) => void
+  handleBrowseDestination: () => void
+  isBrowsingDestination: boolean
   manifestPage: ManifestPageDto | null
   setManifestPageIndex: (page: number) => void
   analysisDuplicatePage: PaginatedSlice<
@@ -142,14 +137,6 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
     showHomeStageIntro = false,
     scanStatus,
     status,
-    sourceInput,
-    setSourceInput,
-    handleCheckReadiness,
-    isCheckingReadiness,
-    handleStartScan,
-    canAttemptScan,
-    isStartingScan,
-    handleCancelScan,
     uiMode,
     analysisSummary,
     plan,
@@ -178,6 +165,7 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
     activeReviewBucket,
     setActiveReviewBucket,
     reviewActionPage,
+    filteredActionIds,
     handleChangeReviewPage,
     selectedAction,
     setSelectedActionId,
@@ -197,6 +185,8 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
     draftDestinationPath,
     destinationInput,
     setDestinationInput,
+    handleBrowseDestination,
+    isBrowsingDestination,
     manifestPage,
     setManifestPageIndex,
     analysisDuplicatePage,
@@ -210,6 +200,56 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
     workflowStepperActiveIndex,
   } = props
 
+  const selectionScopeKey = `${plan?.planId ?? 'none'}:${activeReviewBucket}:${reviewActionPage.page}`
+  const [selectionState, setSelectionState] = useState<{
+    scopeKey: string
+    selectedActionIds: string[]
+    selectionAnchorIndex: number | null
+  }>({
+    scopeKey: selectionScopeKey,
+    selectedActionIds: [],
+    selectionAnchorIndex: null,
+  })
+
+  const scopedSelection =
+    selectionState.scopeKey === selectionScopeKey
+      ? selectionState
+      : { scopeKey: selectionScopeKey, selectedActionIds: [], selectionAnchorIndex: null }
+  const selectedActionIds = scopedSelection.selectedActionIds
+  const selectionAnchorIndex = scopedSelection.selectionAnchorIndex
+  const selectedActionIdSet = useMemo(() => new Set(selectedActionIds), [selectedActionIds])
+
+  function toggleActionSelection(actionId: string, index: number, withRange: boolean) {
+    if (withRange && selectionAnchorIndex !== null && reviewActionPage.items.length > 0) {
+      const start = Math.min(selectionAnchorIndex, index)
+      const end = Math.max(selectionAnchorIndex, index)
+      const rangeIds = reviewActionPage.items.slice(start, end + 1).map((item) => item.actionId)
+      setSelectionState((current) => {
+        const currentIds =
+          current.scopeKey === selectionScopeKey ? current.selectedActionIds : ([] as string[])
+        return {
+          scopeKey: selectionScopeKey,
+          selectedActionIds: Array.from(new Set([...currentIds, ...rangeIds])),
+          selectionAnchorIndex: selectionAnchorIndex,
+        }
+      })
+      return
+    }
+
+    setSelectionState((current) => {
+      const currentIds =
+        current.scopeKey === selectionScopeKey ? current.selectedActionIds : ([] as string[])
+      const nextIds = currentIds.includes(actionId)
+        ? currentIds.filter((id) => id !== actionId)
+        : [...currentIds, actionId]
+      return {
+        scopeKey: selectionScopeKey,
+        selectedActionIds: nextIds,
+        selectionAnchorIndex: index,
+      }
+    })
+  }
+
   return (
     <div className="workflow-legacy text-[length:initial]">
       <WorkflowStepper
@@ -222,70 +262,6 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
           <span className="phase-pill" title={phaseLabel}>
             {phaseLabel}
           </span>
-        }
-        left={
-          <div className="placeholder-stack">
-            <div className="status-card">
-              <header className="status-card__header">
-                <div>
-                  <p className="status-card__eyebrow">Scan harness</p>
-                  <h3>Source paths</h3>
-                </div>
-              </header>
-              <label className="field-label" htmlFor="source-paths">
-                Enter one absolute path per line
-              </label>
-              <textarea
-                id="source-paths"
-                className="text-input text-input--multiline"
-                placeholder="/Users/siggewidmark/Downloads"
-                value={sourceInput}
-                onChange={(event) => setSourceInput(event.target.value)}
-              />
-              <div className="button-row">
-                <button
-                  className="action-button action-button--secondary"
-                  onClick={handleCheckReadiness}
-                  disabled={isCheckingReadiness}
-                  type="button"
-                >
-                  {isCheckingReadiness ? 'Checking…' : 'Check readiness'}
-                </button>
-                <button
-                  className="action-button"
-                  onClick={handleStartScan}
-                  disabled={!canAttemptScan || isStartingScan}
-                  type="button"
-                >
-                  {isStartingScan ? 'Starting…' : 'Start scan'}
-                </button>
-                <button
-                  className="action-button action-button--secondary"
-                  onClick={handleCancelScan}
-                  disabled={!scanStatus || scanStatus.status !== 'running'}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-            {status ? <PermissionReadinessCard readiness={status.permissionsReadiness} /> : null}
-            {uiMode === 'advanced' && analysisSummary?.structureSignals.length ? (
-              <div className="status-card">
-                <header className="status-card__header">
-                  <div>
-                    <p className="status-card__eyebrow">Structure warnings</p>
-                    <h3>{analysisSummary.structureSignals.length} signals</h3>
-                  </div>
-                </header>
-                <ul className="status-card__list">
-                  {analysisSummary.structureSignals.map((signal) => (
-                    <li key={`${signal.kind}-${signal.description}`}>{signal.description}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
         }
         center={
           <div className="placeholder-stack">
@@ -823,15 +799,84 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
                     Next actions
                   </button>
                 </div>
+                <div className="button-row button-row--compact">
+                  <button
+                    className="action-button"
+                    disabled={isUpdatingReview || filteredActionIds.length === 0}
+                    onClick={() => handleReviewDecision(filteredActionIds, 'approve')}
+                    type="button"
+                  >
+                    Accept all in filter
+                  </button>
+                  <button
+                    className="action-button action-button--secondary"
+                    disabled={isUpdatingReview || filteredActionIds.length === 0}
+                    onClick={() => handleReviewDecision(filteredActionIds, 'reject')}
+                    type="button"
+                  >
+                    Reject all in filter
+                  </button>
+                  <button
+                    className="action-button action-button--secondary"
+                    disabled={isUpdatingReview || filteredActionIds.length === 0}
+                    onClick={() => handleReviewDecision(filteredActionIds, 'reset')}
+                    type="button"
+                  >
+                    Reset all in filter
+                  </button>
+                </div>
+                <div className="button-row button-row--compact">
+                  <button
+                    className="action-button"
+                    disabled={isUpdatingReview || selectedActionIds.length === 0}
+                    onClick={() => handleReviewDecision(selectedActionIds, 'approve')}
+                    type="button"
+                  >
+                    Accept selected ({selectedActionIds.length})
+                  </button>
+                  <button
+                    className="action-button action-button--secondary"
+                    disabled={isUpdatingReview || selectedActionIds.length === 0}
+                    onClick={() => handleReviewDecision(selectedActionIds, 'reject')}
+                    type="button"
+                  >
+                    Reject selected ({selectedActionIds.length})
+                  </button>
+                  <button
+                    className="action-button action-button--secondary"
+                    disabled={isUpdatingReview || selectedActionIds.length === 0}
+                    onClick={() => handleReviewDecision(selectedActionIds, 'reset')}
+                    type="button"
+                  >
+                    Reset selected ({selectedActionIds.length})
+                  </button>
+                </div>
                 {reviewActionPage.totalItems > 0 ? (
                   <ul className="manifest-list">
-                    {reviewActionPage.items.map((action) => (
+                    {reviewActionPage.items.map((action, actionIndex) => (
                       <li
                         key={action.actionId}
                         className={`manifest-list__item manifest-list__item--stacked ${
                           selectedAction?.actionId === action.actionId ? 'manifest-list__item--selected' : ''
                         }`}
                       >
+                        <div className="action-selection-slot">
+                          <button
+                            type="button"
+                            className={`action-selection-toggle ${
+                              selectedActionIdSet.has(action.actionId)
+                                ? 'action-selection-toggle--selected'
+                                : ''
+                            }`}
+                            aria-label={`Select action ${action.sourcePath}`}
+                            aria-pressed={selectedActionIdSet.has(action.actionId)}
+                            onClick={(event) => {
+                              toggleActionSelection(action.actionId, actionIndex, event.shiftKey)
+                            }}
+                          >
+                            <span className="action-selection-toggle__dot" aria-hidden />
+                          </button>
+                        </div>
                         <button
                           type="button"
                           className="review-item-main"
@@ -1331,6 +1376,16 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
                 value={destinationInput}
                 onChange={(event) => setDestinationInput(event.target.value)}
               />
+              <div className="button-row button-row--compact">
+                <button
+                  className="action-button action-button--secondary"
+                  disabled={isBrowsingDestination}
+                  onClick={handleBrowseDestination}
+                  type="button"
+                >
+                  {isBrowsingDestination ? 'Opening…' : 'Browse destination folder'}
+                </button>
+              </div>
               {uiMode === 'advanced' ? (
                 <>
                   <p className="status-card__summary">

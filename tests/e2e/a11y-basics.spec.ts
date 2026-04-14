@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test'
 test('error banner uses assertive live region', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('textbox', { name: 'Source folders' }).fill('/tmp/e2e-source')
-  await page.getByRole('button', { name: 'Check readiness' }).click()
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Generate dataset' }).click()
 
   const banner = page.getByTestId('app-error-banner')
   await expect(banner).toBeVisible()
