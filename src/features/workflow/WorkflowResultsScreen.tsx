@@ -238,6 +238,26 @@ export function WorkflowResultsScreen({
         </div>
       ) : null}
 
+      {analysisSummary && (analysisSummary.analysisPartialNotes?.length ?? 0) > 0 ? (
+        <div
+          className="rounded-2xl border border-amber-400/35 bg-amber-500/10 p-6 backdrop-blur-xl"
+          role="status"
+        >
+          <h4 className="flex items-center gap-2 text-sm font-medium text-amber-100">
+            <AlertCircle className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+            Analysis completed with caveats
+          </h4>
+          <p className="mt-1 text-xs text-amber-100/70">
+            Some expensive checks may be partial — review notes below.
+          </p>
+          <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-amber-50/90">
+            {(analysisSummary.analysisPartialNotes ?? []).map((note, index) => (
+              <li key={`${index}-${note}`}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {uiMode === 'advanced' && analysisSummary && aiAssistedSuggestions.length > 0 ? (
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
           <h4 className="font-medium text-white">AI-assisted suggestions</h4>

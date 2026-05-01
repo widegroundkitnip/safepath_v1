@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use commands::app::{get_app_status, select_destinations, select_sources};
 use commands::execution::{
-    execute_plan, get_execution_preflight, get_execution_status, undo_record, undo_session,
+    execute_plan, export_duplicate_workflow_report, get_execution_preflight, get_execution_status,
+    undo_record, undo_session,
 };
 use commands::learner::{
     get_ai_evaluation_snapshot, get_learner_draft_previews, get_learner_observations,
@@ -21,8 +22,9 @@ use commands::review::{
     set_duplicate_keeper, update_review_state,
 };
 use commands::scan::{
-    cancel_scan, get_analysis_summary, get_history_page, get_manifest_page, get_scan_status,
-    run_expensive_analysis, set_protection_override, start_scan,
+    cancel_duplicate_run, cancel_scan, get_analysis_summary, get_duplicate_run_status,
+    get_history_page, get_manifest_page, get_scan_status, run_expensive_analysis,
+    set_protection_override, start_scan,
 };
 use commands::test_data::generate_synthetic_dataset;
 use safepath_core::pathing::{normalize_selection_path, selection_path_key};
@@ -88,6 +90,15 @@ impl AppState {
         self.store.save_selection_state(&selection)
     }
 
+    fn persist_duplicate_config(&self, config: safepath_core::DuplicateConfig) -> Result<(), String> {
+        let mut selection = self
+            .selection
+            .lock()
+            .map_err(|_| "Failed to lock selection state.".to_string())?;
+        selection.duplicate_config = Some(config);
+        self.store.save_selection_state(&selection)
+    }
+
     fn set_destination_paths(&self, destination_paths: Vec<String>) -> Result<(), String> {
         let mut selection = self
             .selection
@@ -127,6 +138,7 @@ fn main() {
             set_duplicate_keeper,
             reveal_path_in_file_manager,
             get_execution_preflight,
+            export_duplicate_workflow_report,
             execute_plan,
             get_execution_status,
             undo_record,
@@ -139,6 +151,8 @@ fn main() {
             save_learner_draft_as_preset,
             start_scan,
             cancel_scan,
+            get_duplicate_run_status,
+            cancel_duplicate_run,
             get_scan_status,
             get_manifest_page,
             get_history_page,

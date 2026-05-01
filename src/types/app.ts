@@ -1,3 +1,26 @@
+import type {
+  DuplicateConfig,
+  DuplicateEvidence,
+  DuplicateMatchBasis,
+  DuplicateMatchExplanation,
+} from './duplicateConfig'
+
+export type {
+  DuplicateConfig,
+  DuplicateEvidence,
+  DuplicateMatchBasis,
+  DuplicateMatchExplanation,
+  SimpleDuplicateMode,
+  SimpleStrictness,
+  KeeperPreference,
+} from './duplicateConfig'
+export {
+  DUPLICATE_CONFIG_SCHEMA_VERSION,
+  defaultDuplicateConfig,
+  duplicateConfigFromAdvancedForm,
+  duplicateConfigFromSimple,
+} from './duplicateConfig'
+
 export type PermissionReadinessState = 'unknown' | 'ready' | 'needsAttention'
 
 export type WorkflowPhase = 'idle' | 'scanning' | 'analyzing' | 'planning' | 'executing'
@@ -65,6 +88,7 @@ export type MediaDateSource = 'embeddedMetadata' | 'filesystemCreated' | 'filesy
 
 export interface StartScanRequest {
   sourcePaths: string[]
+  duplicateConfig?: DuplicateConfig
 }
 
 export type SyntheticDatasetCategory =
@@ -111,6 +135,20 @@ export interface GenerateSyntheticDatasetResultDto {
   warnings: string[]
 }
 
+export type DuplicateRunPhase =
+  | 'idle'
+  | 'discovering'
+  | 'analyzingDuplicates'
+  | 'hashingDuplicateContent'
+  | 'sketchingImageSimilarity'
+  | 'finalizingAnalysis'
+  | 'reviewReady'
+
+export interface DuplicateRunProgressEvent {
+  jobId: string
+  phase: DuplicateRunPhase
+}
+
 export interface ScanJobStatusDto {
   jobId: string
   status: ScanJobState
@@ -122,6 +160,9 @@ export interface ScanJobStatusDto {
   startedAtEpochMs: number
   finishedAtEpochMs: number | null
   errorMessage: string | null
+  duplicateConfig?: DuplicateConfig
+  configFingerprint?: string | null
+  duplicateRunPhase?: DuplicateRunPhase
 }
 
 export interface ManifestEntryDto {
@@ -467,6 +508,11 @@ export interface DuplicateGroupDto {
   sizeBytes: number
   itemCount: number
   members: DuplicateMemberDto[]
+  matchBasis?: DuplicateMatchBasis
+  confidence?: number
+  evidence?: DuplicateEvidence
+  matchExplanation?: DuplicateMatchExplanation
+  stableGroupKey?: string
 }
 
 export interface ProtectionDetectionDto {
@@ -507,6 +553,9 @@ export interface AnalysisSummaryDto {
   detectedProtections: ProtectionDetectionDto[]
   protectionOverrides: ProtectionOverrideDto[]
   aiAssistedSuggestions: AiAssistedSuggestionDto[]
+  duplicateConfig?: DuplicateConfig
+  configFingerprint?: string | null
+  analysisPartialNotes?: string[]
 }
 
 export interface BuildPlanRequest {
@@ -653,6 +702,11 @@ export interface PlanDuplicateGroupDto {
   recommendedKeeperReason: string | null
   recommendedKeeperConfidence: number | null
   recommendedKeeperReasonTags: string[]
+  matchBasis?: DuplicateMatchBasis
+  confidence?: number
+  evidence?: DuplicateEvidence
+  matchExplanation?: DuplicateMatchExplanation
+  stableGroupKey?: string
 }
 
 export interface DuplicateReviewGroupDetailsDto {
@@ -701,6 +755,8 @@ export interface PlanDto {
   summary: PlanSummaryDto
   duplicateGroups: PlanDuplicateGroupDto[]
   actions: PlannedActionDto[]
+  configFingerprint?: string | null
+  duplicateConfigSnapshot?: DuplicateConfig
 }
 
 export type ExecutionSessionStatus =
@@ -710,7 +766,7 @@ export type ExecutionSessionStatus =
   | 'partiallyFailed'
   | 'failed'
 
-export type PreflightIssueSeverity = 'warning' | 'error'
+export type PreflightIssueSeverity = 'info' | 'warning' | 'error'
 
 export interface PreflightIssueDto {
   actionId: string | null
@@ -758,6 +814,7 @@ export interface ExecutionSessionDto {
   skippedActionCount: number
   preflightIssues: PreflightIssueDto[]
   records: ActionRecordDto[]
+  configFingerprint?: string | null
 }
 
 export interface ExecutionProgressEvent {

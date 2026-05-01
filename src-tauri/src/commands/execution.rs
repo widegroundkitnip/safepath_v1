@@ -1,7 +1,8 @@
 use safepath_core::{
-    executor, history, ExecutePlanRequest, ExecutionCompletedEvent, ExecutionProgressEvent,
-    ExecutionSessionDto, ExecutionSessionStatus, ManifestEntryDto, PlanDto, PreflightIssueDto,
-    PreflightIssueSeverity, ReviewState, UndoRecordRequest, UndoSessionRequest, WorkflowPhase,
+    executor, history, DuplicateWorkflowReportDto, ExecutePlanRequest, ExecutionCompletedEvent,
+    ExecutionProgressEvent, ExecutionSessionDto, ExecutionSessionStatus, ManifestEntryDto,
+    PlanDto, PreflightIssueDto, PreflightIssueSeverity, ReviewState, UndoRecordRequest,
+    UndoSessionRequest, WorkflowPhase,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -21,6 +22,37 @@ pub fn get_execution_preflight(
         .get_plan(&plan_id)?
         .ok_or_else(|| format!("Plan `{plan_id}` was not found."))?;
     collect_execution_preflight_issues(state.inner(), &plan)
+}
+
+#[tauri::command]
+pub fn export_duplicate_workflow_report(
+    state: State<'_, AppState>,
+    plan_id: String,
+    output_path: String,
+) -> Result<(), String> {
+    let plan = state
+        .store
+        .get_plan(&plan_id)?
+        .ok_or_else(|| format!("Plan `{plan_id}` was not found."))?;
+    let preflight = collect_execution_preflight_issues(state.inner(), &plan)?;
+    let job_id = plan.job_id.clone();
+    let scan_job = state.store.get_scan_status(&job_id)?;
+    let analysis_summary = state.store.get_analysis_summary(&job_id)?;
+    let exported_at_epoch_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
+    let report = DuplicateWorkflowReportDto {
+        schema_version: 1,
+        exported_at_epoch_ms,
+        plan_id: plan_id.clone(),
+        plan,
+        scan_job,
+        analysis_summary,
+        execution_preflight: preflight,
+    };
+    let json = serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
+    fs::write(output_path, json).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -124,7 +156,7 @@ pub fn undo_record(
         state.store.save_execution_session(&undo_session)?;
 
         history::finalize_undo_session(&mut undo_session);
-        let _ = state
+        state
             .store
             .reconcile_plan_after_undo(&undo_session.plan_id, &undo_session.records)?;
         state.store.save_execution_session(&undo_session)?;
@@ -178,7 +210,7 @@ pub fn undo_session(
         }
 
         history::finalize_undo_session(&mut undo_session);
-        let _ = state
+        state
             .store
             .reconcile_plan_after_undo(&undo_session.plan_id, &undo_session.records)?;
         state.store.save_execution_session(&undo_session)?;
@@ -241,8 +273,34 @@ fn collect_execution_preflight_issues(
     plan: &PlanDto,
 ) -> Result<Vec<PreflightIssueDto>, String> {
     let mut issues = executor::preflight_plan(plan);
+    issues.extend(plan_duplicate_fingerprint_issues(state, plan)?);
     issues.extend(drift_preflight_warnings(state, plan)?);
     Ok(issues)
+}
+
+fn plan_duplicate_fingerprint_issues(
+    state: &AppState,
+    plan: &PlanDto,
+) -> Result<Vec<PreflightIssueDto>, String> {
+    let Some(expected) = plan.config_fingerprint.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let job_fp = state.store.get_scan_job_fingerprint(&plan.job_id)?;
+    if job_fp.as_ref() == Some(expected) {
+        return Ok(Vec::new());
+    }
+    if job_fp.is_none() {
+        return Ok(vec![PreflightIssueDto {
+            action_id: None,
+            severity: PreflightIssueSeverity::Warning,
+            message: "This job has no stored duplicate configuration fingerprint; rebuild the plan after upgrading for full execution trust checks.".to_string(),
+        }]);
+    }
+    Ok(vec![PreflightIssueDto {
+        action_id: None,
+        severity: PreflightIssueSeverity::Blocking,
+        message: "Duplicate configuration changed since this plan was built. Re-run analysis and rebuild the plan before executing.".to_string(),
+    }])
 }
 
 fn drift_preflight_warnings(
@@ -314,7 +372,7 @@ fn apply_preflight_issues(
     let has_errors = session
         .preflight_issues
         .iter()
-        .any(|issue| issue.severity == PreflightIssueSeverity::Error);
+        .any(|issue| issue.severity == PreflightIssueSeverity::Blocking);
     if has_errors {
         session.status = ExecutionSessionStatus::Failed;
         session.finished_at_epoch_ms = Some(session.started_at_epoch_ms);

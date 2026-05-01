@@ -1,7 +1,16 @@
 import { CheckCircle2, FolderOpen, Loader2, PlayCircle, AlertCircle } from 'lucide-react'
+import type { Dispatch, SetStateAction } from 'react'
 
 import { PermissionReadinessCard } from '../../components/permissions/PermissionReadinessCard'
 import type { AppStatusDto } from '../../types/app'
+import type {
+  DuplicateGroupScope,
+  ExecutionSafetyTier,
+  KeeperPreference,
+  MatchingStrategy,
+  SimpleDuplicateMode,
+  SimpleStrictness,
+} from '../../types/duplicateConfig'
 
 import { WorkflowHomeStageIntro } from './WorkflowHomeStageIntro'
 import { WorkflowStepper } from './WorkflowStepper'
@@ -21,6 +30,41 @@ type WorkflowSetupScreenProps = {
   canAttemptScan: boolean
   workflowStepperActiveIndex: number
   uiMode: 'simple' | 'advanced'
+  dupSimpleMode: SimpleDuplicateMode
+  setDupSimpleMode: Dispatch<SetStateAction<SimpleDuplicateMode>>
+  dupSimpleStrictness: SimpleStrictness
+  setDupSimpleStrictness: Dispatch<SetStateAction<SimpleStrictness>>
+  dupKeeperPreference: KeeperPreference
+  setDupKeeperPreference: Dispatch<SetStateAction<KeeperPreference>>
+  dupIgnoreSmallFiles: boolean
+  setDupIgnoreSmallFiles: Dispatch<SetStateAction<boolean>>
+  dupIgnoreHiddenSystem: boolean
+  setDupIgnoreHiddenSystem: Dispatch<SetStateAction<boolean>>
+  dupGroupByFolder: boolean
+  setDupGroupByFolder: Dispatch<SetStateAction<boolean>>
+  advancedDupStrategy: MatchingStrategy
+  setAdvancedDupStrategy: Dispatch<SetStateAction<MatchingStrategy>>
+  advancedDupKeeper: KeeperPreference
+  setAdvancedDupKeeper: Dispatch<SetStateAction<KeeperPreference>>
+  advancedDupIncludeHidden: boolean
+  setAdvancedDupIncludeHidden: Dispatch<SetStateAction<boolean>>
+  advancedDupIgnoreJunk: boolean
+  setAdvancedDupIgnoreJunk: Dispatch<SetStateAction<boolean>>
+  advancedDupGroupByFolder: boolean
+  setAdvancedDupGroupByFolder: Dispatch<SetStateAction<boolean>>
+  advancedDupScope: DuplicateGroupScope
+  setAdvancedDupScope: Dispatch<SetStateAction<DuplicateGroupScope>>
+  advancedDupImages: boolean
+  setAdvancedDupImages: Dispatch<SetStateAction<boolean>>
+  advancedDupSafetyTier: ExecutionSafetyTier
+  setAdvancedDupSafetyTier: Dispatch<SetStateAction<ExecutionSafetyTier>>
+  advancedDupMaxSimilarFiles: number
+  setAdvancedDupMaxSimilarFiles: Dispatch<SetStateAction<number>>
+  advancedDupMaxPairwise: number
+  setAdvancedDupMaxPairwise: Dispatch<SetStateAction<number>>
+  advancedDupTimeoutMsRaw: string
+  setAdvancedDupTimeoutMsRaw: Dispatch<SetStateAction<string>>
+  duplicateScanPreviewLines: string[]
 }
 
 export function WorkflowSetupScreen({
@@ -38,6 +82,41 @@ export function WorkflowSetupScreen({
   canAttemptScan,
   workflowStepperActiveIndex,
   uiMode,
+  dupSimpleMode,
+  setDupSimpleMode,
+  dupSimpleStrictness,
+  setDupSimpleStrictness,
+  dupKeeperPreference,
+  setDupKeeperPreference,
+  dupIgnoreSmallFiles,
+  setDupIgnoreSmallFiles,
+  dupIgnoreHiddenSystem,
+  setDupIgnoreHiddenSystem,
+  dupGroupByFolder,
+  setDupGroupByFolder,
+  advancedDupStrategy,
+  setAdvancedDupStrategy,
+  advancedDupKeeper,
+  setAdvancedDupKeeper,
+  advancedDupIncludeHidden,
+  setAdvancedDupIncludeHidden,
+  advancedDupIgnoreJunk,
+  setAdvancedDupIgnoreJunk,
+  advancedDupGroupByFolder,
+  setAdvancedDupGroupByFolder,
+  advancedDupScope,
+  setAdvancedDupScope,
+  advancedDupImages,
+  setAdvancedDupImages,
+  advancedDupSafetyTier,
+  setAdvancedDupSafetyTier,
+  advancedDupMaxSimilarFiles,
+  setAdvancedDupMaxSimilarFiles,
+  advancedDupMaxPairwise,
+  setAdvancedDupMaxPairwise,
+  advancedDupTimeoutMsRaw,
+  setAdvancedDupTimeoutMsRaw,
+  duplicateScanPreviewLines,
 }: WorkflowSetupScreenProps) {
   const draftSourceLines = sourceInput
     .split('\n')
@@ -119,6 +198,237 @@ export function WorkflowSetupScreen({
             {isBrowsingDestination ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             {isBrowsingDestination ? 'Opening…' : 'Browse destination folder'}
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-white/15 bg-white/10 p-8 shadow-xl backdrop-blur-xl">
+        <p className="mb-1 text-sm font-medium text-white">Duplicate detection</p>
+        <p className="mb-4 text-xs text-white/55">
+          {uiMode === 'simple'
+            ? 'These settings apply to the next scan. Simple mode stays on non-destructive safety.'
+            : 'Full control over matching, grouping, and execution tier for the next scan.'}
+        </p>
+        {uiMode === 'simple' ? (
+          <div className="flex flex-col gap-4 text-sm text-white">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/50">Mode</p>
+              <div className="flex flex-col gap-2">
+                {(
+                  [
+                    ['exactDuplicates', 'Exact duplicates'],
+                    ['similarFiles', 'Similar files'],
+                    ['mediaDuplicates', 'Media duplicates'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="radio"
+                      name="dup-simple-mode"
+                      checked={dupSimpleMode === value}
+                      onChange={() => setDupSimpleMode(value)}
+                      className="accent-violet-400"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-white/60">Strictness</span>
+              <select
+                value={dupSimpleStrictness}
+                onChange={(e) => setDupSimpleStrictness(e.target.value as SimpleStrictness)}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+              >
+                <option value="strict">Strict</option>
+                <option value="balanced">Balanced</option>
+                <option value="flexible">Flexible (review-heavy)</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-white/60">Keeper preference</span>
+              <select
+                value={dupKeeperPreference}
+                onChange={(e) => setDupKeeperPreference(e.target.value as KeeperPreference)}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="preferOriginalFolder">Original folder (shallow path)</option>
+                <option value="preferProtected">Prefer protected</option>
+                <option value="shortestPath">Shortest path</option>
+                <option value="largestFile">Largest file</option>
+              </select>
+            </label>
+            <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dupIgnoreSmallFiles}
+                  onChange={(e) => setDupIgnoreSmallFiles(e.target.checked)}
+                  className="accent-violet-400"
+                />
+                Ignore tiny files (under 4&nbsp;KB)
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dupIgnoreHiddenSystem}
+                  onChange={(e) => setDupIgnoreHiddenSystem(e.target.checked)}
+                  className="accent-violet-400"
+                />
+                Ignore system junk (.DS_Store, etc.)
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dupGroupByFolder}
+                  onChange={(e) => setDupGroupByFolder(e.target.checked)}
+                  className="accent-violet-400"
+                />
+                Group duplicates within same folder only
+              </label>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 text-sm text-white">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-white/60">Matching strategy</span>
+              <select
+                value={advancedDupStrategy}
+                onChange={(e) => setAdvancedDupStrategy(e.target.value as MatchingStrategy)}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+              >
+                <option value="exactHash">Exact hash</option>
+                <option value="fastNameSize">Fast (name + size)</option>
+                <option value="hybrid">Hybrid (name/size + hash)</option>
+                <option value="similar">Similar (experimental)</option>
+                <option value="metadataOnly">Metadata only</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-white/60">Keeper preference</span>
+              <select
+                value={advancedDupKeeper}
+                onChange={(e) => setAdvancedDupKeeper(e.target.value as KeeperPreference)}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="preferOriginalFolder">Original folder</option>
+                <option value="preferProtected">Prefer protected</option>
+                <option value="shortestPath">Shortest path</option>
+                <option value="largestFile">Largest file</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-white/60">Group scope</span>
+              <select
+                value={advancedDupScope}
+                onChange={(e) => setAdvancedDupScope(e.target.value as DuplicateGroupScope)}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+              >
+                <option value="external">Across sources</option>
+                <option value="perSourceRoot">Per source root</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-white/60">Execution safety tier</span>
+              <select
+                value={advancedDupSafetyTier}
+                onChange={(e) => setAdvancedDupSafetyTier(e.target.value as ExecutionSafetyTier)}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+              >
+                <option value="safeHold">Safe hold (default)</option>
+                <option value="reversible">Reversible</option>
+                <option value="destructive">Destructive (advanced)</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={advancedDupIncludeHidden}
+                onChange={(e) => setAdvancedDupIncludeHidden(e.target.checked)}
+                className="accent-violet-400"
+              />
+              Include hidden files
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={advancedDupIgnoreJunk}
+                onChange={(e) => setAdvancedDupIgnoreJunk(e.target.checked)}
+                className="accent-violet-400"
+              />
+              Ignore system junk
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={advancedDupGroupByFolder}
+                onChange={(e) => setAdvancedDupGroupByFolder(e.target.checked)}
+                className="accent-violet-400"
+              />
+              Group within same folder
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={advancedDupImages}
+                onChange={(e) => setAdvancedDupImages(e.target.checked)}
+                className="accent-violet-400"
+              />
+              Enable image module (similarity hooks)
+            </label>
+            <div className="mt-2 border-t border-white/10 pt-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/50">
+                Analysis budgets
+              </p>
+              <label className="mb-2 flex flex-col gap-1">
+                <span className="text-xs text-white/60">Max files for similarity work</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={advancedDupMaxSimilarFiles}
+                  onChange={(e) => setAdvancedDupMaxSimilarFiles(Number(e.target.value) || 0)}
+                  className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+                />
+              </label>
+              <label className="mb-2 flex flex-col gap-1">
+                <span className="text-xs text-white/60">Max pairwise comparisons</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={advancedDupMaxPairwise}
+                  onChange={(e) => setAdvancedDupMaxPairwise(Number(e.target.value) || 0)}
+                  className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-white/60">Analysis timeout (ms, optional)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 120000"
+                  value={advancedDupTimeoutMsRaw}
+                  onChange={(e) => setAdvancedDupTimeoutMsRaw(e.target.value)}
+                  className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white placeholder:text-white/35"
+                />
+              </label>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-white/50">
+            What happens when you scan
+          </p>
+          <ul className="list-inside list-disc space-y-1 text-xs text-white/75">
+            {duplicateScanPreviewLines.map((line, index) => (
+              <li key={`${index}-${line.slice(0, 24)}`}>{line}</li>
+            ))}
+          </ul>
         </div>
       </div>
 

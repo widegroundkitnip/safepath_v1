@@ -1,3 +1,4 @@
+import { AlertCircle } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { AppStatusSummary } from '../../components/layout/AppStatusSummary'
 import { WorkflowShell } from '../../components/layout/WorkflowShell'
@@ -110,6 +111,10 @@ export type PlanReviewWorkspaceProps = {
   duplicateGroupDetails: DuplicateReviewGroupDetailsDto | null
   isLoadingDuplicateGroupDetails: boolean
   handleSetDuplicateKeeper: (group: PlanDuplicateGroupDto, keeperEntryId: string) => void
+  /** Apply planner-recommended keepers for every group that still needs one. */
+  onApplyRecommendedDuplicateKeepers?: () => void
+  /** Write JSON debug report (plan, scan snapshot, analysis, preflight). */
+  onExportDuplicateWorkflowReport?: () => void
   handleRevealPath: (path: string) => void
   draftDestinationPath: string
   destinationInput: string
@@ -181,6 +186,8 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
     duplicateGroupDetails,
     isLoadingDuplicateGroupDetails,
     handleSetDuplicateKeeper,
+    onApplyRecommendedDuplicateKeepers,
+    onExportDuplicateWorkflowReport,
     handleRevealPath,
     draftDestinationPath,
     destinationInput,
@@ -199,6 +206,47 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
     phaseLabel,
     workflowStepperActiveIndex,
   } = props
+
+  const executionPreflightCounts = useMemo(() => {
+    let blocking = 0
+    let warnings = 0
+    let infos = 0
+    for (const issue of executionPreflightIssues) {
+      if (issue.severity === 'error') {
+        blocking += 1
+      } else if (issue.severity === 'warning') {
+        warnings += 1
+      } else {
+        infos += 1
+      }
+    }
+    return { blocking, warnings, infos }
+  }, [executionPreflightIssues])
+
+  const approvedMoveCount =
+    plan?.actions.filter((a) => a.reviewState === 'approved' && a.actionKind === 'move').length ??
+    0
+
+  const driftIssuesForSelectedDuplicateGroup = useMemo(() => {
+    if (!duplicateGroupDetails?.members.length) {
+      return []
+    }
+    const paths = duplicateGroupDetails.members.map((m) => m.path)
+    return executionPreflightIssues.filter((issue) => {
+      if (!issue.message) {
+        return false
+      }
+      return paths.some((p) => issue.message.includes(p))
+    })
+  }, [duplicateGroupDetails, executionPreflightIssues])
+
+  const canApplyRecommendedDuplicateKeepers = useMemo(
+    () =>
+      plan?.duplicateGroups.some(
+        (group) => !group.selectedKeeperEntryId && group.recommendedKeeperEntryId,
+      ) ?? false,
+    [plan],
+  )
 
   const selectionScopeKey = `${plan?.planId ?? 'none'}:${activeReviewBucket}:${reviewActionPage.page}`
   const [selectionState, setSelectionState] = useState<{
@@ -383,6 +431,41 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
                     reading through sparse multi-GB or multi-TB test data.
                   </p>
                 ) : null}
+                {analysisSummary && (analysisSummary.analysisPartialNotes?.length ?? 0) > 0 ? (
+                  <div
+                    className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/15 px-4 py-3"
+                    role="status"
+                  >
+                    <p className="flex items-center gap-2 text-sm font-medium text-amber-100">
+                      <AlertCircle className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                      Analysis caveats
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-50/95">
+                      {(analysisSummary.analysisPartialNotes ?? []).map((note, index) => (
+                        <li key={`${index}-${note}`}>{note}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {analysisSummary &&
+            plan &&
+            uiMode === 'simple' &&
+            (analysisSummary.analysisPartialNotes?.length ?? 0) > 0 ? (
+              <div
+                className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-4 py-3"
+                role="status"
+              >
+                <p className="flex items-center gap-2 text-sm font-medium text-amber-100">
+                  <AlertCircle className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                  Analysis caveats
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-50/95">
+                  {(analysisSummary.analysisPartialNotes ?? []).map((note, index) => (
+                    <li key={`plan-simple-${index}-${note}`}>{note}</li>
+                  ))}
+                </ul>
               </div>
             ) : null}
             {uiMode === 'advanced' && analysisSummary?.aiAssistedSuggestions.length ? (
@@ -686,6 +769,39 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
                       Safepath checks approved actions before it moves anything, then runs the same
                       guardrails again at execute time.
                     </p>
+                    <div className="mt-3 grid gap-2 rounded-xl border border-white/10 bg-black/15 p-3 text-left text-xs text-white/80 sm:grid-cols-2">
+                      <p className="sm:col-span-2 text-[11px] font-semibold uppercase tracking-wide text-white/45">
+                        Dry-run summary
+                      </p>
+                      <div>
+                        <span className="text-white/50">Approved actions</span>{' '}
+                        <span className="font-medium text-white">{approvedActionCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-white/50">Approved moves</span>{' '}
+                        <span className="font-medium text-white">{approvedMoveCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-white/50">Blocking checks</span>{' '}
+                        <span className="font-medium text-rose-200/90">
+                          {executionPreflightCounts.blocking}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-white/50">Warnings / info</span>{' '}
+                        <span className="font-medium text-white">
+                          {executionPreflightCounts.warnings} / {executionPreflightCounts.infos}
+                        </span>
+                      </div>
+                      {plan?.destinationRoot ? (
+                        <div className="sm:col-span-2">
+                          <span className="text-white/50">Destination root</span>{' '}
+                          <span className="font-mono text-[11px] text-white/85">
+                            {plan.destinationRoot}
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
                     {isLoadingExecutionPreflight ? (
                       <p className="status-card__summary">Refreshing execution checks…</p>
                     ) : executionPreflightIssues.length === 0 ? (
@@ -1119,6 +1235,27 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
                     <p className="status-card__eyebrow">Duplicate review groups</p>
                     <h3>{plan.duplicateGroups.length} groups</h3>
                   </div>
+                  <div className="flex flex-col items-end gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                    {onApplyRecommendedDuplicateKeepers ? (
+                      <button
+                        type="button"
+                        className="action-button action-button--secondary"
+                        disabled={isUpdatingReview || !canApplyRecommendedDuplicateKeepers}
+                        onClick={onApplyRecommendedDuplicateKeepers}
+                      >
+                        Apply suggested keepers
+                      </button>
+                    ) : null}
+                    {uiMode === 'advanced' && onExportDuplicateWorkflowReport ? (
+                      <button
+                        type="button"
+                        className="action-button action-button--secondary"
+                        onClick={onExportDuplicateWorkflowReport}
+                      >
+                        Export duplicate report
+                      </button>
+                    ) : null}
+                  </div>
                 </header>
                 <p className="status-card__summary">
                   {uiMode === 'advanced' ? (
@@ -1270,6 +1407,23 @@ export function PlanReviewWorkspace(props: PlanReviewWorkspaceProps) {
                         </>
                       )}
                     </p>
+                    {driftIssuesForSelectedDuplicateGroup.length > 0 ? (
+                      <div className="mb-3 rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-50">
+                        <p className="font-semibold text-amber-100">Source drift for this group</p>
+                        <p className="mt-1 text-amber-50/90">
+                          Execution checks reference files in this group. Something may have changed on
+                          disk since the scan.
+                        </p>
+                        <ul className="mt-2 list-inside list-disc space-y-1 text-amber-50/85">
+                          {driftIssuesForSelectedDuplicateGroup.map((issue, idx) => (
+                            <li key={`${issue.actionId ?? 'session'}-drift-${idx}`}>
+                              {issue.severity === 'error' ? 'Blocking: ' : 'Heads-up: '}
+                              {issue.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     {uiMode === 'advanced' && selectedDuplicateGroup.recommendedKeeperReason ? (
                       <p className="status-card__summary">
                         Suggested keeper: {selectedDuplicateGroup.recommendedKeeperEntryId ?? 'none yet'}.

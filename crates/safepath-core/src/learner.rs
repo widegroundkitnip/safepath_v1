@@ -1552,6 +1552,9 @@ mod tests {
                 suggested_protection_path: None,
                 suggested_protection_kind: None,
             }],
+            duplicate_config: None,
+            config_fingerprint: None,
+            analysis_partial_notes: Vec::new(),
         }
     }
 
@@ -1665,8 +1668,15 @@ mod tests {
                 recommended_keeper_reason: Some("Newest file".to_string()),
                 recommended_keeper_confidence: Some(0.8),
                 recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
+                match_basis: None,
+                confidence: None,
+                evidence: None,
+                match_explanation: None,
+                stable_group_key: None,
             }],
             actions: Vec::new(),
+            config_fingerprint: None,
+            duplicate_config_snapshot: None,
         }
     }
 
@@ -1719,6 +1729,8 @@ mod tests {
                     notes: vec!["Routed by photo rule".to_string()],
                 },
             }],
+            config_fingerprint: None,
+            duplicate_config_snapshot: None,
         }
     }
 

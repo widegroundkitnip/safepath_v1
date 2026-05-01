@@ -12,7 +12,7 @@ use crate::pathing::{disambiguated_filename, join_segments};
 use crate::types::{
     ActionRecordDto, ActionRecordStatus, ChecksumMode, ExecutionOperationKind, ExecutionSessionDto,
     ExecutionSessionStatus, ExecutionStrategy, PlanDto, PlannedActionDto, PlannedActionKind,
-    PreflightIssueDto, PreflightIssueSeverity, ReviewState,
+    PreflightIssueDto, PreflightIssueSeverity, ProtectionState, ReviewState, SafetyFlag,
 };
 
 pub fn preflight_plan(plan: &PlanDto) -> Vec<PreflightIssueDto> {
@@ -22,9 +22,34 @@ pub fn preflight_plan(plan: &PlanDto) -> Vec<PreflightIssueDto> {
     if approved_actions.is_empty() {
         issues.push(PreflightIssueDto {
             action_id: None,
-            severity: PreflightIssueSeverity::Error,
+            severity: PreflightIssueSeverity::Blocking,
             message: "Approve at least one executable action before running execution.".to_string(),
         });
+    }
+
+    for group in &plan.duplicate_groups {
+        if group.item_count < 2 {
+            continue;
+        }
+        if group.selected_keeper_entry_id.is_some() {
+            continue;
+        }
+        let has_approved = group.member_action_ids.iter().any(|action_id| {
+            plan.actions
+                .iter()
+                .find(|action| &action.action_id == action_id)
+                .is_some_and(|action| action.review_state == ReviewState::Approved)
+        });
+        if has_approved {
+            issues.push(PreflightIssueDto {
+                action_id: None,
+                severity: PreflightIssueSeverity::Blocking,
+                message: format!(
+                    "Duplicate group `{}` has approved actions but no keeper is selected. Choose a keeper before executing.",
+                    group.group_id
+                ),
+            });
+        }
     }
 
     for index in approved_actions {
@@ -35,12 +60,100 @@ pub fn preflight_plan(plan: &PlanDto) -> Vec<PreflightIssueDto> {
             }
             Err(message) => issues.push(PreflightIssueDto {
                 action_id: Some(action.action_id.clone()),
-                severity: PreflightIssueSeverity::Error,
+                severity: PreflightIssueSeverity::Blocking,
                 message,
             }),
         }
     }
 
+    issues.extend(preflight_approved_sources_exist(plan));
+    issues.extend(preflight_duplicate_keeper_consistency(plan));
+
+    issues
+}
+
+fn action_considered_protected(action: &PlannedActionDto) -> bool {
+    if let Some(state) = action.explanation.protection_state {
+        if state != ProtectionState::Unprotected {
+            return true;
+        }
+    }
+    action
+        .explanation
+        .safety_flags
+        .iter()
+        .any(|flag| matches!(flag, SafetyFlag::Protected))
+}
+
+fn preflight_approved_sources_exist(plan: &PlanDto) -> Vec<PreflightIssueDto> {
+    let mut issues = Vec::new();
+    for index in approved_action_indices(plan) {
+        let action = &plan.actions[index];
+        if fs::metadata(&action.source_path).is_err() {
+            issues.push(PreflightIssueDto {
+                action_id: Some(action.action_id.clone()),
+                severity: PreflightIssueSeverity::Blocking,
+                message: format!(
+                    "Approved source path `{}` is missing on disk. Rebuild the plan or change approvals.",
+                    action.source_path
+                ),
+            });
+        }
+    }
+    issues
+}
+
+fn preflight_duplicate_keeper_consistency(plan: &PlanDto) -> Vec<PreflightIssueDto> {
+    let mut issues = Vec::new();
+    for group in &plan.duplicate_groups {
+        if let Some(keeper_id) = &group.selected_keeper_entry_id {
+            if !group.member_entry_ids.contains(keeper_id) {
+                issues.push(PreflightIssueDto {
+                    action_id: None,
+                    severity: PreflightIssueSeverity::Blocking,
+                    message: format!(
+                        "Duplicate group `{}` lists a keeper that is not part of the group. Pick a valid keeper.",
+                        group.group_id
+                    ),
+                });
+            }
+        }
+
+        let Some(keeper_id) = &group.selected_keeper_entry_id else {
+            continue;
+        };
+
+        let keeper_protected = group
+            .member_action_ids
+            .iter()
+            .find_map(|action_id| {
+                plan.actions.iter().find(|action| {
+                    &action.action_id == action_id && &action.source_entry_id == keeper_id
+                })
+            })
+            .map(action_considered_protected)
+            .unwrap_or(false);
+
+        let protected_approved_other = group.member_action_ids.iter().any(|action_id| {
+            plan.actions.iter().any(|action| {
+                &action.action_id == action_id
+                    && &action.source_entry_id != keeper_id
+                    && action.review_state == ReviewState::Approved
+                    && action_considered_protected(action)
+            })
+        });
+
+        if protected_approved_other && !keeper_protected {
+            issues.push(PreflightIssueDto {
+                action_id: None,
+                severity: PreflightIssueSeverity::Warning,
+                message: format!(
+                    "Duplicate group `{}`: the keeper is not a protected copy, but another approved member is. Consider switching the keeper.",
+                    group.group_id
+                ),
+            });
+        }
+    }
     issues
 }
 
@@ -48,7 +161,7 @@ pub fn initialize_execution_session(plan: &PlanDto) -> ExecutionSessionDto {
     let preflight_issues = preflight_plan(plan);
     let has_errors = preflight_issues
         .iter()
-        .any(|issue| issue.severity == PreflightIssueSeverity::Error);
+        .any(|issue| issue.severity == PreflightIssueSeverity::Blocking);
     let approved_action_count = approved_action_indices(plan).len() as u32;
     let started_at_epoch_ms = now_epoch_ms();
 
@@ -74,6 +187,7 @@ pub fn initialize_execution_session(plan: &PlanDto) -> ExecutionSessionDto {
         skipped_action_count: 0,
         preflight_issues,
         records: Vec::new(),
+        config_fingerprint: plan.config_fingerprint.clone(),
     }
 }
 
@@ -982,7 +1096,7 @@ pub(crate) fn remove_path(path: &str) -> Result<(), String> {
 fn error_issue(action_id: &str, message: String) -> PreflightIssueDto {
     PreflightIssueDto {
         action_id: Some(action_id.to_string()),
-        severity: PreflightIssueSeverity::Error,
+        severity: PreflightIssueSeverity::Blocking,
         message,
     }
 }
@@ -1037,7 +1151,8 @@ mod tests {
     use crate::types::{
         ActionExplanationDto, ActionRecordStatus, ConflictKind, DuplicateCertainty,
         ExecutionSessionStatus, ExecutionStrategy, PlanDto, PlanDuplicateGroupDto, PlanSummaryDto,
-        PlannedActionDto, PlannedActionKind, ReviewState,
+        PlannedActionDto, PlannedActionKind, PreflightIssueSeverity, ProtectionState, ReviewState,
+        SafetyFlag,
     };
     use uuid::Uuid;
 
@@ -1048,6 +1163,85 @@ mod tests {
         assert!(issues
             .iter()
             .any(|issue| issue.message.contains("Approve at least one")));
+    }
+
+    #[test]
+    fn preflight_rejects_duplicate_keeper_not_in_group() {
+        let group = PlanDuplicateGroupDto {
+            group_id: "g1".to_string(),
+            certainty: DuplicateCertainty::Definite,
+            representative_name: "dup.txt".to_string(),
+            item_count: 2,
+            member_action_ids: vec!["action-1".to_string()],
+            member_entry_ids: vec!["entry-1".to_string(), "entry-2".to_string()],
+            selected_keeper_entry_id: Some("not-a-member".to_string()),
+            recommended_keeper_entry_id: None,
+            recommended_keeper_reason: None,
+            recommended_keeper_confidence: None,
+            recommended_keeper_reason_tags: Vec::new(),
+            match_basis: None,
+            confidence: None,
+            evidence: None,
+            match_explanation: None,
+            stable_group_key: None,
+        };
+        let plan = sample_plan(vec![sample_move_action("/tmp/a".into(), "/tmp/b".into())], vec![group]);
+        let issues = preflight_plan(&plan);
+        assert!(issues.iter().any(|issue| issue.message.contains("not part of the group")));
+    }
+
+    #[test]
+    fn preflight_warns_when_keeper_is_not_protected_but_peer_is() {
+        let group = PlanDuplicateGroupDto {
+            group_id: "g1".to_string(),
+            certainty: DuplicateCertainty::Definite,
+            representative_name: "dup.txt".to_string(),
+            item_count: 2,
+            member_action_ids: vec!["action-1".to_string(), "action-2".to_string()],
+            member_entry_ids: vec!["entry-keeper".to_string(), "entry-prot".to_string()],
+            selected_keeper_entry_id: Some("entry-keeper".to_string()),
+            recommended_keeper_entry_id: None,
+            recommended_keeper_reason: None,
+            recommended_keeper_confidence: None,
+            recommended_keeper_reason_tags: Vec::new(),
+            match_basis: None,
+            confidence: None,
+            evidence: None,
+            match_explanation: None,
+            stable_group_key: None,
+        };
+        let mut exp_unprot = sample_explanation();
+        exp_unprot.protection_state = Some(ProtectionState::Unprotected);
+        let mut exp_prot = sample_explanation();
+        exp_prot.protection_state = Some(ProtectionState::UserProtected);
+        exp_prot.safety_flags = vec![SafetyFlag::Protected];
+        let actions = vec![
+            PlannedActionDto {
+                action_id: "action-1".to_string(),
+                source_entry_id: "entry-keeper".to_string(),
+                source_path: "/tmp/k".into(),
+                destination_path: Some("/tmp/dk".into()),
+                duplicate_group_id: Some("g1".to_string()),
+                action_kind: PlannedActionKind::Move,
+                review_state: ReviewState::Approved,
+                explanation: exp_unprot,
+            },
+            PlannedActionDto {
+                action_id: "action-2".to_string(),
+                source_entry_id: "entry-prot".to_string(),
+                source_path: "/tmp/p".into(),
+                destination_path: Some("/tmp/dp".into()),
+                duplicate_group_id: Some("g1".to_string()),
+                action_kind: PlannedActionKind::Move,
+                review_state: ReviewState::Approved,
+                explanation: exp_prot,
+            },
+        ];
+        let plan = sample_plan(actions, vec![group]);
+        let issues = preflight_plan(&plan);
+        assert!(issues.iter().any(|issue| {
+            issue.severity == PreflightIssueSeverity::Warning && issue.message.contains("protected copy")
+        }));
     }
 
     #[test]
@@ -1156,6 +1350,11 @@ mod tests {
             recommended_keeper_reason: Some("Newest file".to_string()),
             recommended_keeper_confidence: Some(0.8),
             recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
+            match_basis: None,
+            confidence: None,
+            evidence: None,
+            match_explanation: None,
+            stable_group_key: None,
         };
 
         let mut plan = sample_plan(vec![keeper_action, duplicate_action], vec![duplicate_group]);
@@ -1219,6 +1418,11 @@ mod tests {
             recommended_keeper_reason: Some("Newest file".to_string()),
             recommended_keeper_confidence: Some(0.8),
             recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
+            match_basis: None,
+            confidence: None,
+            evidence: None,
+            match_explanation: None,
+            stable_group_key: None,
         };
 
         let mut plan = sample_plan(vec![keeper_action, duplicate_action], vec![duplicate_group]);
@@ -1311,6 +1515,11 @@ mod tests {
             recommended_keeper_reason: Some("Newest file".to_string()),
             recommended_keeper_confidence: Some(0.8),
             recommended_keeper_reason_tags: vec!["newest available timestamp".to_string()],
+            match_basis: None,
+            confidence: None,
+            evidence: None,
+            match_explanation: None,
+            stable_group_key: None,
         };
 
         let mut plan = sample_plan(
@@ -1371,6 +1580,8 @@ mod tests {
             },
             duplicate_groups,
             actions,
+            config_fingerprint: None,
+            duplicate_config_snapshot: None,
         }
     }
 

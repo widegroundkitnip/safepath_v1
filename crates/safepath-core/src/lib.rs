@@ -1,4 +1,5 @@
 pub mod analyzer;
+pub mod duplicate_config;
 pub mod evaluation;
 pub mod executor;
 pub mod history;
@@ -12,12 +13,22 @@ pub mod templates;
 pub mod test_data;
 pub mod types;
 
+pub use duplicate_config::{
+    duplicate_config_fingerprint, duplicate_config_from_simple, AnalysisLimits, DuplicateConfig,
+    DuplicateEvidence, DuplicateExecutionPolicy, DuplicateGroupScope, DuplicateMatchBasis,
+    DuplicateMatchExplanation, DuplicateProfile, DuplicateUiMode, ExecutionSafetyTier,
+    FileContentHashCache, GroupingPolicy, ImageDHashCache, KeeperPreference,
+    KeeperStrategySettings,
+    MatchingConditions, MatchingStrategy, MediaModuleRules, MemberContentHash, ScopeFilters,
+    SimpleDuplicateMode, SimpleStrictness, DUPLICATE_CONFIG_SCHEMA_VERSION,
+};
 pub use types::{
     ActionExplanationDto, ActionRecordDto, ActionRecordStatus, AiAssistedSuggestionDto,
     AiAssistedSuggestionKind, AiEvaluationSnapshotDto, AiEvaluationStatus, AiEvaluationTaskDto,
     AnalysisProgressEvent, AnalysisStage, AnalysisSummaryDto, AppStatusDto, BoundaryKind,
     BuildPlanRequest, ChecksumMode, ConflictKind, DuplicateCertainty, DuplicateGroupDto,
-    DuplicatePolicy, DuplicateReviewGroupDetailsDto, DuplicateReviewMemberDto, ExecutePlanRequest,
+    DuplicatePolicy, DuplicateReviewGroupDetailsDto, DuplicateReviewMemberDto,
+    DuplicateRunPhase, DuplicateRunProgressEvent, DuplicateWorkflowReportDto, ExecutePlanRequest,
     ExecutionCompletedEvent, ExecutionOperationKind, ExecutionProgressEvent, ExecutionSessionDto,
     ExecutionSessionStatus, ExecutionStrategy, FallbackBehavior, FileCategory,
     GenerateSyntheticDatasetRequest, GenerateSyntheticDatasetResultDto, HistoryEntryDto,

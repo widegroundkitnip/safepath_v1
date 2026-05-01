@@ -7,7 +7,7 @@ use crate::util::{action_record_status_code, execution_operation_kind_code};
 
 use super::Store;
 
-const LATEST_SCHEMA_VERSION: i32 = 4;
+const LATEST_SCHEMA_VERSION: i32 = 7;
 
 pub(crate) fn initialize_schema(store: &Store) -> Result<(), String> {
     if let Some(parent) = store.db_path.parent() {
@@ -53,6 +53,21 @@ pub(crate) fn initialize_schema(store: &Store) -> Result<(), String> {
         current_version = 4;
     }
 
+    if current_version < 5 {
+        migrate_v4_to_v5(&connection)?;
+        current_version = 5;
+    }
+
+    if current_version < 6 {
+        migrate_v5_to_v6(&connection)?;
+        current_version = 6;
+    }
+
+    if current_version < 7 {
+        migrate_v6_to_v7(&connection)?;
+        current_version = 7;
+    }
+
     create_latest_schema(&connection)?;
     set_schema_version(&connection, current_version)?;
 
@@ -72,7 +87,10 @@ fn create_latest_schema(connection: &Connection) -> Result<(), String> {
                 page_size INTEGER NOT NULL DEFAULT 100,
                 started_at_epoch_ms INTEGER NOT NULL,
                 finished_at_epoch_ms INTEGER,
-                error_message TEXT
+                error_message TEXT,
+                duplicate_config_json TEXT,
+                config_fingerprint TEXT,
+                duplicate_run_phase TEXT NOT NULL DEFAULT 'idle'
             );
 
             CREATE TABLE IF NOT EXISTS scan_sources (
@@ -183,9 +201,54 @@ fn create_latest_schema(connection: &Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_action_records_session_id ON action_records (session_id);
             CREATE INDEX IF NOT EXISTS idx_action_records_undo_lookup
                 ON action_records (operation_kind, status, related_record_id);
+
+            CREATE TABLE IF NOT EXISTS file_content_hashes (
+                job_id TEXT NOT NULL,
+                entry_id TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                modified_ms INTEGER,
+                hash_hex TEXT NOT NULL,
+                PRIMARY KEY (job_id, entry_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_file_content_hashes_job_id
+                ON file_content_hashes (job_id);
+
+            CREATE TABLE IF NOT EXISTS image_dhash_cache (
+                job_id TEXT NOT NULL,
+                entry_id TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                modified_ms INTEGER,
+                d_hash INTEGER NOT NULL,
+                PRIMARY KEY (job_id, entry_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_image_dhash_cache_job_id
+                ON image_dhash_cache (job_id);
             ",
         )
         .map_err(|error| error.to_string())
+}
+
+fn migrate_v6_to_v7(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS image_dhash_cache (
+                job_id TEXT NOT NULL,
+                entry_id TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                modified_ms INTEGER,
+                d_hash INTEGER NOT NULL,
+                PRIMARY KEY (job_id, entry_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_image_dhash_cache_job_id
+                ON image_dhash_cache (job_id);
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn migrate_v1_to_v2(connection: &Connection) -> Result<(), String> {
@@ -208,6 +271,48 @@ fn migrate_v2_to_v3(connection: &Connection) -> Result<(), String> {
             ",
         )
         .map_err(|error| error.to_string())
+}
+
+fn migrate_v5_to_v6(connection: &Connection) -> Result<(), String> {
+    if table_exists(connection, "scan_jobs")? {
+        add_column_if_missing(
+            connection,
+            "scan_jobs",
+            "duplicate_run_phase",
+            "TEXT DEFAULT 'idle'",
+        )?;
+    }
+    Ok(())
+}
+
+fn migrate_v4_to_v5(connection: &Connection) -> Result<(), String> {
+    if table_exists(connection, "scan_jobs")? {
+        add_column_if_missing(
+            connection,
+            "scan_jobs",
+            "duplicate_config_json",
+            "TEXT",
+        )?;
+        add_column_if_missing(connection, "scan_jobs", "config_fingerprint", "TEXT")?;
+    }
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS file_content_hashes (
+                job_id TEXT NOT NULL,
+                entry_id TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                modified_ms INTEGER,
+                hash_hex TEXT NOT NULL,
+                PRIMARY KEY (job_id, entry_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_file_content_hashes_job_id
+                ON file_content_hashes (job_id);
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn migrate_v3_to_v4(connection: &Connection) -> Result<(), String> {

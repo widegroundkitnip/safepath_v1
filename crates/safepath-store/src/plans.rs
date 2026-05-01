@@ -363,6 +363,8 @@ mod tests {
                     notes: Vec::new(),
                 },
             }],
+            config_fingerprint: None,
+            duplicate_config_snapshot: None,
         }
     }
 }

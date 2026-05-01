@@ -4,7 +4,7 @@ test('error banner uses assertive live region', async ({ page }) => {
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Settings' }).click()
-  await page.getByRole('button', { name: 'Generate dataset' }).click()
+  await page.getByRole('button', { name: 'Generate Dataset', exact: true }).click()
 
   const banner = page.getByTestId('app-error-banner')
   await expect(banner).toBeVisible()

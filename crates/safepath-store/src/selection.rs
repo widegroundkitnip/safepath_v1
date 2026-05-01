@@ -64,6 +64,7 @@ mod tests {
             source_paths: vec!["/tmp/source".to_string()],
             destination_paths: vec!["/tmp/destination".to_string()],
             workflow_phase: WorkflowPhase::Planning,
+            duplicate_config: None,
         };
 
         store

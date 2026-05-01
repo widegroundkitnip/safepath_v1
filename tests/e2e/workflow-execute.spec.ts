@@ -29,7 +29,9 @@ test.describe('mocked execute flow', () => {
     await page.getByRole('button', { name: 'Approve', exact: true }).click()
     await page.getByRole('button', { name: /Execute approved \(\d+\)/ }).click()
 
-    await expect(page.getByRole('heading', { name: 'Done' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: 'Run complete' })).toBeVisible({
+      timeout: 15_000,
+    })
 
     await page
       .getByRole('complementary', { name: 'Main navigation' })
@@ -61,7 +63,9 @@ test.describe('mocked execute flow', () => {
 
     await page.getByRole('button', { name: 'Approve', exact: true }).click()
     await page.getByRole('button', { name: /Execute approved \(\d+\)/ }).click()
-    await expect(page.getByRole('heading', { name: 'Done' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: 'Run complete' })).toBeVisible({
+      timeout: 15_000,
+    })
 
     await page
       .getByRole('complementary', { name: 'Main navigation' })
@@ -82,7 +86,9 @@ test.describe('mocked execute flow', () => {
 
     await page.getByRole('button', { name: 'Approve', exact: true }).click()
     await page.getByRole('button', { name: /Execute approved \(\d+\)/ }).click()
-    await expect(page.getByRole('heading', { name: 'Done' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: 'Run complete' })).toBeVisible({
+      timeout: 15_000,
+    })
 
     await page
       .getByRole('complementary', { name: 'Main navigation' })

@@ -25,8 +25,26 @@ jobs:
         run: npm run test -- --run
       - name: Install Playwright browser
         run: PLAYWRIGHT_BROWSERS_PATH=.playwright npx playwright install --with-deps chromium
-      - name: Browser E2E smoke test
+      - name: Playwright browser E2E (mocked desktop APIs)
         run: npm run test:e2e
+
+  desktop_smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.1
+      - name: Install dependencies
+        run: npm ci
+      - name: Build frontend (Vite)
+        run: npm run build
+      - name: Compile Tauri desktop crate (native IPC + shell)
+        run: cargo build -p safepath-desktop
 
   rust:
     runs-on: ubuntu-latest

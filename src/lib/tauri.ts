@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 
 import type {
   AnalysisProgressEvent,
@@ -32,6 +32,7 @@ import type {
   RecordLearnerSuggestionFeedbackRequest,
   SaveLearnerDraftPreviewRequest,
   SetDuplicateKeeperRequest,
+  DuplicateRunProgressEvent,
   ScanJobStatusDto,
   ScanProgressEvent,
   StartScanRequest,
@@ -207,6 +208,31 @@ export async function getExecutionPreflight(planId: string): Promise<PreflightIs
   return invokeDesktop<PreflightIssueDto[]>('get_execution_preflight', { planId })
 }
 
+export async function exportDuplicateWorkflowReport(
+  planId: string,
+  outputPath: string,
+): Promise<void> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eExportDuplicateWorkflowReport(planId, outputPath)
+  }
+  return invokeDesktop<void>('export_duplicate_workflow_report', { planId, outputPath })
+}
+
+/** Pick path then export (desktop only). */
+export async function exportDuplicateWorkflowReportWithDialog(planId: string): Promise<void> {
+  if (!hasTauriRuntime()) {
+    throw desktopOnlyError('export_duplicate_workflow_report')
+  }
+  const path = await save({
+    defaultPath: `safepath-duplicate-report-${planId}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (path == null) {
+    return
+  }
+  await exportDuplicateWorkflowReport(planId, path)
+}
+
 export async function getExecutionStatus(
   sessionId: string,
 ): Promise<ExecutionSessionDto | null> {
@@ -264,6 +290,20 @@ export async function getScanStatus(jobId: string): Promise<ScanJobStatusDto | n
     return E2E.e2eGetScanStatus(jobId)
   }
   return invokeDesktop<ScanJobStatusDto | null>('get_scan_status', { jobId })
+}
+
+export async function getDuplicateRunStatus(runId: string): Promise<ScanJobStatusDto | null> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eGetScanStatus(runId)
+  }
+  return invokeDesktop<ScanJobStatusDto | null>('get_duplicate_run_status', { runId })
+}
+
+export async function cancelDuplicateRun(runId: string): Promise<ScanJobStatusDto> {
+  if (E2E.isE2eMockEnabled()) {
+    return E2E.e2eCancelScan(runId)
+  }
+  return invokeDesktop<ScanJobStatusDto>('cancel_duplicate_run', { runId })
 }
 
 export async function getManifestPage(
@@ -385,6 +425,18 @@ export async function onScanProgress(
   }
 
   return listen<ScanProgressEvent>('scan_progress', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function onDuplicateRunProgress(
+  handler: (payload: DuplicateRunProgressEvent) => void,
+): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<DuplicateRunProgressEvent>('duplicate_run_progress', (event) => {
     handler(event.payload)
   })
 }

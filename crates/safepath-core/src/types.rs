@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use crate::duplicate_config::{
+    DuplicateConfig, DuplicateEvidence, DuplicateMatchBasis, DuplicateMatchExplanation,
+};
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppStatusDto {
@@ -20,6 +24,8 @@ pub struct PersistedSelectionStateDto {
     pub source_paths: Vec<String>,
     pub destination_paths: Vec<String>,
     pub workflow_phase: WorkflowPhase,
+    #[serde(default)]
+    pub duplicate_config: Option<DuplicateConfig>,
 }
 
 impl Default for PersistedSelectionStateDto {
@@ -28,6 +34,7 @@ impl Default for PersistedSelectionStateDto {
             source_paths: Vec::new(),
             destination_paths: Vec::new(),
             workflow_phase: WorkflowPhase::Idle,
+            duplicate_config: None,
         }
     }
 }
@@ -62,6 +69,8 @@ pub enum WorkflowPhase {
 #[serde(rename_all = "camelCase")]
 pub struct StartScanRequest {
     pub source_paths: Vec<String>,
+    #[serde(default)]
+    pub duplicate_config: Option<DuplicateConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +126,28 @@ pub struct SyntheticCategoryCountDto {
     pub count: u64,
 }
 
+/// Progress phases for duplicate detection work tied to a scan job (`job_id` doubles as `run_id`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DuplicateRunPhase {
+    #[default]
+    Idle,
+    Discovering,
+    AnalyzingDuplicates,
+    HashingDuplicateContent,
+    /// Perceptual dHash / image similarity pass during expensive analysis.
+    SketchingImageSimilarity,
+    FinalizingAnalysis,
+    ReviewReady,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateRunProgressEvent {
+    pub job_id: String,
+    pub phase: DuplicateRunPhase,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanJobStatusDto {
@@ -130,6 +161,12 @@ pub struct ScanJobStatusDto {
     pub started_at_epoch_ms: i64,
     pub finished_at_epoch_ms: Option<i64>,
     pub error_message: Option<String>,
+    #[serde(default)]
+    pub duplicate_config: Option<DuplicateConfig>,
+    #[serde(default)]
+    pub config_fingerprint: Option<String>,
+    #[serde(default)]
+    pub duplicate_run_phase: DuplicateRunPhase,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -447,6 +484,21 @@ pub enum MediaDateSource {
     FilesystemModified,
 }
 
+/// Debug/export bundle for duplicate workflow review (plan + scan context + preflight).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateWorkflowReportDto {
+    pub schema_version: u32,
+    pub exported_at_epoch_ms: i64,
+    pub plan_id: String,
+    pub plan: PlanDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scan_job: Option<ScanJobStatusDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis_summary: Option<AnalysisSummaryDto>,
+    pub execution_preflight: Vec<PreflightIssueDto>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisSummaryDto {
@@ -462,6 +514,12 @@ pub struct AnalysisSummaryDto {
     pub protection_overrides: Vec<ProtectionOverrideDto>,
     #[serde(default)]
     pub ai_assisted_suggestions: Vec<AiAssistedSuggestionDto>,
+    #[serde(default)]
+    pub duplicate_config: Option<DuplicateConfig>,
+    #[serde(default)]
+    pub config_fingerprint: Option<String>,
+    #[serde(default)]
+    pub analysis_partial_notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -589,6 +647,10 @@ pub struct PlanDto {
     pub summary: PlanSummaryDto,
     pub duplicate_groups: Vec<PlanDuplicateGroupDto>,
     pub actions: Vec<PlannedActionDto>,
+    #[serde(default)]
+    pub config_fingerprint: Option<String>,
+    #[serde(default)]
+    pub duplicate_config_snapshot: Option<DuplicateConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -629,6 +691,16 @@ pub struct PlanDuplicateGroupDto {
     pub recommended_keeper_confidence: Option<f32>,
     #[serde(default)]
     pub recommended_keeper_reason_tags: Vec<String>,
+    #[serde(default)]
+    pub match_basis: Option<DuplicateMatchBasis>,
+    #[serde(default)]
+    pub confidence: Option<f32>,
+    #[serde(default)]
+    pub evidence: Option<DuplicateEvidence>,
+    #[serde(default)]
+    pub match_explanation: Option<DuplicateMatchExplanation>,
+    #[serde(default)]
+    pub stable_group_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -743,6 +815,8 @@ pub struct ExecutionSessionDto {
     pub skipped_action_count: u32,
     pub preflight_issues: Vec<PreflightIssueDto>,
     pub records: Vec<ActionRecordDto>,
+    #[serde(default)]
+    pub config_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -766,8 +840,10 @@ pub struct PreflightIssueDto {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum PreflightIssueSeverity {
+    Info,
     Warning,
-    Error,
+    #[serde(rename = "error")]
+    Blocking,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -920,6 +996,16 @@ pub struct DuplicateGroupDto {
     pub size_bytes: u64,
     pub item_count: u32,
     pub members: Vec<DuplicateMemberDto>,
+    #[serde(default)]
+    pub match_basis: Option<DuplicateMatchBasis>,
+    #[serde(default)]
+    pub confidence: Option<f32>,
+    #[serde(default)]
+    pub evidence: Option<DuplicateEvidence>,
+    #[serde(default)]
+    pub match_explanation: Option<DuplicateMatchExplanation>,
+    #[serde(default)]
+    pub stable_group_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

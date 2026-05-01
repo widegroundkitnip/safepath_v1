@@ -224,6 +224,7 @@ mod tests {
             skipped_action_count: 0,
             preflight_issues: Vec::<PreflightIssueDto>::new(),
             records: Vec::new(),
+            config_fingerprint: None,
         }
     }
 

@@ -69,6 +69,16 @@ export function isE2eMockEnabled(): boolean {
   return import.meta.env.VITE_E2E_MOCK === 'true'
 }
 
+/** Opt-in from Playwright via `addInitScript` so duplicate-keeper flows can be exercised under the browser mock. */
+function e2eIncludeDuplicatePlanInBuild(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  return Boolean(
+    (window as Window & { __SP_E2E_INCLUDE_DUPLICATE_PLAN__?: boolean }).__SP_E2E_INCLUDE_DUPLICATE_PLAN__,
+  )
+}
+
 function destinationRoot(): string {
   return destinationPaths[0] ?? '/e2e/destination'
 }
@@ -135,6 +145,9 @@ function mockAnalysisSummary(jobId: string): AnalysisSummaryDto {
     detectedProtections: [],
     protectionOverrides: [],
     aiAssistedSuggestions: [],
+    analysisPartialNotes: [
+      'Similarity pass stopped early: pairwise comparison budget exhausted.',
+    ],
   }
 }
 
@@ -185,6 +198,8 @@ export async function e2eStartScan(request: StartScanRequest): Promise<ScanJobSt
     startedAtEpochMs: Date.now(),
     finishedAtEpochMs: Date.now(),
     errorMessage: null,
+    duplicateRunPhase: 'reviewReady',
+    ...(request.duplicateConfig ? { duplicateConfig: request.duplicateConfig } : {}),
   }
   storedPlan = null
   historyEntries = []
@@ -231,6 +246,77 @@ export async function e2eGetAnalysisSummary(jobId: string): Promise<AnalysisSumm
 
 export async function e2eBuildPlan(request: BuildPlanRequest): Promise<PlanDto> {
   const dest = destinationRoot()
+
+  if (e2eIncludeDuplicatePlanInBuild()) {
+    const dupGroupId = 'e2e-dup-group-1'
+    const explanationA = {
+      ...makeExplanation(),
+      duplicateTier: 'likely' as const,
+      conflictStatus: 'duplicateConflict' as const,
+      blockedReason: 'Pick a keeper before approving duplicate-linked actions.',
+    }
+    const explanationB = {
+      ...makeExplanation(),
+      duplicateTier: 'likely' as const,
+      conflictStatus: 'duplicateConflict' as const,
+      blockedReason: 'Pick a keeper before approving duplicate-linked actions.',
+    }
+    const plan: PlanDto = {
+      planId: 'e2e-plan-1',
+      jobId: request.jobId,
+      presetId: request.presetId,
+      presetName: 'E2E mock preset',
+      destinationRoot: dest,
+      planOptions: mockPreset().planOptions,
+      summary: {
+        totalActions: 2,
+        moveActions: 2,
+        reviewActions: 2,
+        blockedActions: 0,
+        skippedActions: 0,
+      },
+      duplicateGroups: [
+        {
+          groupId: dupGroupId,
+          certainty: 'likely',
+          representativeName: 'example-dup.txt',
+          itemCount: 2,
+          memberActionIds: ['e2e-dup-action-a', 'e2e-dup-action-b'],
+          memberEntryIds: ['e2e-dup-entry-a', 'e2e-dup-entry-b'],
+          selectedKeeperEntryId: null,
+          recommendedKeeperEntryId: 'e2e-dup-entry-a',
+          recommendedKeeperReason: 'E2E mock recommendation',
+          recommendedKeeperConfidence: 0.72,
+          recommendedKeeperReasonTags: ['e2e'],
+        },
+      ],
+      actions: [
+        {
+          actionId: 'e2e-dup-action-a',
+          sourceEntryId: 'e2e-dup-entry-a',
+          sourcePath: '/e2e/source/example-dup-a.txt',
+          destinationPath: `${dest}/dup/example-dup.txt`,
+          duplicateGroupId: dupGroupId,
+          actionKind: 'move',
+          reviewState: 'needsChoice',
+          explanation: explanationA,
+        },
+        {
+          actionId: 'e2e-dup-action-b',
+          sourceEntryId: 'e2e-dup-entry-b',
+          sourcePath: '/e2e/source/example-dup-b.txt',
+          destinationPath: `${dest}/dup/example-dup-b.txt`,
+          duplicateGroupId: dupGroupId,
+          actionKind: 'move',
+          reviewState: 'needsChoice',
+          explanation: explanationB,
+        },
+      ],
+    }
+    storedPlan = plan
+    return plan
+  }
+
   const plan: PlanDto = {
     planId: 'e2e-plan-1',
     jobId: request.jobId,
@@ -295,25 +381,67 @@ export async function e2eSetDuplicateKeeper(request: SetDuplicateKeeperRequest):
   if (!storedPlan || storedPlan.planId !== request.planId) {
     throw new Error('No plan')
   }
-  return storedPlan
+  const groupIndex = storedPlan.duplicateGroups.findIndex((g) => g.groupId === request.groupId)
+  if (groupIndex === -1) {
+    throw new Error(`Duplicate group \`${request.groupId}\` was not found.`)
+  }
+  const group = storedPlan.duplicateGroups[groupIndex]
+  if (!group.memberEntryIds.includes(request.keeperEntryId)) {
+    throw new Error('Selected keeper must belong to the duplicate group.')
+  }
+  const duplicateGroups = storedPlan.duplicateGroups.map((g, i) =>
+    i === groupIndex ? { ...g, selectedKeeperEntryId: request.keeperEntryId } : g,
+  )
+  const keeperNote = 'Duplicate keeper selected. Action can now be reviewed.'
+  const actions = storedPlan.actions.map((action) => {
+    if (action.duplicateGroupId !== request.groupId || action.reviewState !== 'needsChoice') {
+      return action
+    }
+    const alreadyNoted = action.explanation.notes.some((note) => note === keeperNote)
+    return {
+      ...action,
+      reviewState: 'pending' as const,
+      explanation: {
+        ...action.explanation,
+        conflictStatus: null,
+        blockedReason: null,
+        notes: alreadyNoted ? action.explanation.notes : [...action.explanation.notes, keeperNote],
+      },
+    }
+  })
+  const nextPlan: PlanDto = { ...storedPlan, duplicateGroups, actions }
+  storedPlan = nextPlan
+  return nextPlan
 }
 
 export async function e2eGetDuplicateReviewGroupDetails(
-  _planId: string,
+  planId: string,
   groupId: string,
 ): Promise<DuplicateReviewGroupDetailsDto> {
+  const group =
+    storedPlan?.planId === planId
+      ? storedPlan.duplicateGroups.find((g) => g.groupId === groupId)
+      : undefined
+
   return {
     groupId,
-    representativeName: 'E2E group',
-    certainty: 'likely',
-    itemCount: 0,
-    selectedKeeperEntryId: null,
-    recommendedKeeperEntryId: null,
-    recommendedKeeperReason: null,
-    recommendedKeeperConfidence: null,
-    recommendedKeeperReasonTags: [],
+    representativeName: group?.representativeName ?? 'E2E group',
+    certainty: group?.certainty ?? 'likely',
+    itemCount: group?.itemCount ?? group?.memberEntryIds.length ?? 0,
+    selectedKeeperEntryId: group?.selectedKeeperEntryId ?? null,
+    recommendedKeeperEntryId: group?.recommendedKeeperEntryId ?? null,
+    recommendedKeeperReason: group?.recommendedKeeperReason ?? null,
+    recommendedKeeperConfidence: group?.recommendedKeeperConfidence ?? null,
+    recommendedKeeperReasonTags: group?.recommendedKeeperReasonTags ?? [],
     members: [],
   }
+}
+
+export async function e2eExportDuplicateWorkflowReport(
+  _planId: string,
+  _outputPath: string,
+): Promise<void> {
+  return
 }
 
 export async function e2eGetExecutionPreflight(_planId: string): Promise<PreflightIssueDto[]> {

@@ -1,7 +1,7 @@
 import { Loader2, Sparkles } from 'lucide-react'
 
 import type { ScanJobStatusDto, ScanProgressEvent } from '../../types/app'
-
+import { duplicateRunPhaseLabel } from './duplicateRunPhaseLabel'
 import { WorkflowHomeStageIntro } from './WorkflowHomeStageIntro'
 import { WorkflowStepper } from './WorkflowStepper'
 
@@ -25,6 +25,7 @@ export function WorkflowScanningScreen({
   const total = Math.max(scanStatus.discoveredEntries, 1)
   const done = scanStatus.scannedFiles + scanStatus.scannedDirectories
   const pct = Math.min(100, Math.round((done / total) * 100))
+  const phaseHint = duplicateRunPhaseLabel(scanStatus.duplicateRunPhase)
 
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center gap-10 py-8">
@@ -75,6 +76,9 @@ export function WorkflowScanningScreen({
 
       <div className="text-center">
         <h2 className="text-2xl font-semibold text-white">Scanning files</h2>
+        {phaseHint ? (
+          <p className="mt-1 text-sm font-medium text-violet-200/90">{phaseHint}</p>
+        ) : null}
         <p className="mt-2 text-sm text-white/60">
           {uiMode === 'simple'
             ? scanProgress?.latestPath

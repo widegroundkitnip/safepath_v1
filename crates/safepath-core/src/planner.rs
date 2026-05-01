@@ -4,6 +4,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::analyzer::classify_entry;
+use crate::duplicate_config::{KeeperPreference, KeeperStrategySettings};
 use crate::pathing::{disambiguated_filename, join_path, normalize_display_path, path_is_within};
 use crate::rules::{describe_conditions, rule_matches};
 use crate::templates::render_destination_template;
@@ -137,7 +138,7 @@ pub fn build_plan_with_observations(
 
     resolve_destination_conflicts(&mut actions);
     let duplicate_groups = build_duplicate_groups(
-        &analysis_summary.likely_duplicate_groups,
+        analysis_summary,
         &actions,
         &entry_lookup,
         &preset.preset_id,
@@ -162,6 +163,8 @@ pub fn build_plan_with_observations(
         },
         duplicate_groups,
         actions,
+        config_fingerprint: analysis_summary.config_fingerprint.clone(),
+        duplicate_config_snapshot: analysis_summary.duplicate_config.clone(),
     })
 }
 
@@ -551,17 +554,23 @@ fn duplicate_lookup<'a>(
 }
 
 fn build_duplicate_groups(
-    analysis_groups: &[DuplicateGroupDto],
+    analysis_summary: &AnalysisSummaryDto,
     actions: &[PlannedActionDto],
     entry_lookup: &HashMap<String, &ManifestEntryDto>,
     preset_id: &str,
     learner_observations: &[LearnerObservationDto],
 ) -> Vec<PlanDuplicateGroupDto> {
+    let analysis_groups = &analysis_summary.likely_duplicate_groups;
     let action_by_entry = actions
         .iter()
         .map(|action| (action.source_entry_id.clone(), action))
         .collect::<HashMap<_, _>>();
     let history = duplicate_keeper_history_summary(preset_id, learner_observations);
+    let keeper_settings = analysis_summary
+        .duplicate_config
+        .as_ref()
+        .map(|config| config.keeper.clone())
+        .unwrap_or_default();
 
     analysis_groups
         .iter()
@@ -580,7 +589,13 @@ fn build_duplicate_groups(
                 .iter()
                 .filter_map(|action| entry_lookup.get(&action.source_entry_id).copied())
                 .collect::<Vec<_>>();
-            let recommendation = recommend_duplicate_keeper(group, &member_entries, history);
+            let recommendation = recommend_duplicate_keeper(
+                group,
+                &member_entries,
+                history,
+                &keeper_settings,
+                &analysis_summary.detected_protections,
+            );
 
             Some(PlanDuplicateGroupDto {
                 group_id: group.group_id.clone(),
@@ -605,15 +620,30 @@ fn build_duplicate_groups(
                     .as_ref()
                     .map(|item| item.reason_tags.clone())
                     .unwrap_or_default(),
+                match_basis: group.match_basis.clone(),
+                confidence: group.confidence,
+                evidence: group.evidence.clone(),
+                match_explanation: group.match_explanation.clone(),
+                stable_group_key: group.stable_group_key.clone(),
             })
         })
         .collect()
+}
+
+fn entry_is_protected(entry: &ManifestEntryDto, protections: &[ProtectionDetectionDto]) -> bool {
+    protections.iter().any(|detection| {
+        detection.state != ProtectionState::Unprotected
+            && (entry.path == detection.path
+                || entry.path.starts_with(&format!("{}/", detection.path)))
+    })
 }
 
 fn recommend_duplicate_keeper(
     group: &DuplicateGroupDto,
     member_entries: &[&ManifestEntryDto],
     history: DuplicateKeeperHistorySummary,
+    keeper_settings: &KeeperStrategySettings,
+    protections: &[ProtectionDetectionDto],
 ) -> Option<DuplicateKeeperRecommendation> {
     let mut scored = member_entries
         .iter()
@@ -665,14 +695,68 @@ fn recommend_duplicate_keeper(
         }
     }
 
-    scored.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| right.best_timestamp.cmp(&left.best_timestamp))
-            .then_with(|| left.entry.path.len().cmp(&right.entry.path.len()))
-            .then_with(|| left.entry.path.cmp(&right.entry.path))
-    });
+    match keeper_settings.preference {
+        KeeperPreference::Newest => {
+            scored.sort_by(|left, right| {
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| right.best_timestamp.cmp(&left.best_timestamp))
+                    .then_with(|| left.entry.path.len().cmp(&right.entry.path.len()))
+                    .then_with(|| left.entry.path.cmp(&right.entry.path))
+            });
+        }
+        KeeperPreference::Oldest => {
+            scored.sort_by(|left, right| {
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| left.best_timestamp.cmp(&right.best_timestamp))
+                    .then_with(|| left.entry.path.len().cmp(&right.entry.path.len()))
+                    .then_with(|| left.entry.path.cmp(&right.entry.path))
+            });
+        }
+        KeeperPreference::LargestFile => {
+            scored.sort_by(|left, right| {
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| right.entry.size_bytes.cmp(&left.entry.size_bytes))
+                    .then_with(|| left.entry.path.cmp(&right.entry.path))
+            });
+        }
+        KeeperPreference::ShortestPath => {
+            scored.sort_by(|left, right| {
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| left.entry.path.len().cmp(&right.entry.path.len()))
+                    .then_with(|| left.entry.path.cmp(&right.entry.path))
+            });
+        }
+        KeeperPreference::PreferOriginalFolder => {
+            scored.sort_by(|left, right| {
+                let left_depth = left.entry.relative_path.matches('/').count();
+                let right_depth = right.entry.relative_path.matches('/').count();
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| left_depth.cmp(&right_depth))
+                    .then_with(|| left.entry.path.cmp(&right.entry.path))
+            });
+        }
+        KeeperPreference::PreferProtected => {
+            scored.sort_by(|left, right| {
+                let left_p = entry_is_protected(left.entry, protections);
+                let right_p = entry_is_protected(right.entry, protections);
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| right_p.cmp(&left_p))
+                    .then_with(|| left.entry.path.cmp(&right.entry.path))
+            });
+        }
+    }
 
     let winner = scored.first()?;
     let runner_up_score = scored
@@ -1029,6 +1113,11 @@ mod tests {
                 entry_id: "dup-1".to_string(),
                 path: "/source/dup.txt".to_string(),
             }],
+            match_basis: None,
+            confidence: None,
+            evidence: None,
+            match_explanation: None,
+            stable_group_key: None,
         }];
 
         let plan = build_plan(
@@ -1083,6 +1172,11 @@ mod tests {
                         path: downloads_copy.path.clone(),
                     },
                 ],
+                match_basis: None,
+                confidence: None,
+                evidence: None,
+                match_explanation: None,
+                stable_group_key: None,
             }],
             ..empty_analysis("job-dup")
         };
@@ -1151,6 +1245,11 @@ mod tests {
                         path: downloads_copy.path.clone(),
                     },
                 ],
+                match_basis: None,
+                confidence: None,
+                evidence: None,
+                match_explanation: None,
+                stable_group_key: None,
             }],
             ..empty_analysis("job-dup-history")
         };
@@ -1486,6 +1585,9 @@ mod tests {
             detected_protections: Vec::new(),
             protection_overrides: Vec::<ProtectionOverrideDto>::new(),
             ai_assisted_suggestions: Vec::new(),
+            duplicate_config: None,
+            config_fingerprint: None,
+            analysis_partial_notes: Vec::new(),
         }
     }
 

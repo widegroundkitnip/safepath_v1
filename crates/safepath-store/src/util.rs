@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use safepath_core::{
-    ActionRecordStatus, DuplicateCertainty, ExecutionOperationKind, ManifestEntryKind,
-    ProtectionDetectionDto, ProtectionOverrideKind, ScanJobState,
+    ActionRecordStatus, DuplicateCertainty, DuplicateRunPhase, ExecutionOperationKind,
+    ManifestEntryKind, ProtectionDetectionDto, ProtectionOverrideKind, ScanJobState,
 };
 
 pub(crate) fn now_epoch_ms() -> i64 {
@@ -97,5 +97,29 @@ pub(crate) fn duplicate_certainty_code(certainty: DuplicateCertainty) -> &'stati
         DuplicateCertainty::Definite => "definite",
         DuplicateCertainty::Likely => "likely",
         DuplicateCertainty::Possible => "possible",
+    }
+}
+
+pub(crate) fn duplicate_run_phase_code(phase: DuplicateRunPhase) -> &'static str {
+    match phase {
+        DuplicateRunPhase::Idle => "idle",
+        DuplicateRunPhase::Discovering => "discovering",
+        DuplicateRunPhase::AnalyzingDuplicates => "analyzingDuplicates",
+        DuplicateRunPhase::HashingDuplicateContent => "hashingDuplicateContent",
+        DuplicateRunPhase::SketchingImageSimilarity => "sketchingImageSimilarity",
+        DuplicateRunPhase::FinalizingAnalysis => "finalizingAnalysis",
+        DuplicateRunPhase::ReviewReady => "reviewReady",
+    }
+}
+
+pub(crate) fn parse_duplicate_run_phase(value: &str) -> DuplicateRunPhase {
+    match value {
+        "discovering" => DuplicateRunPhase::Discovering,
+        "analyzingDuplicates" => DuplicateRunPhase::AnalyzingDuplicates,
+        "hashingDuplicateContent" => DuplicateRunPhase::HashingDuplicateContent,
+        "sketchingImageSimilarity" => DuplicateRunPhase::SketchingImageSimilarity,
+        "finalizingAnalysis" => DuplicateRunPhase::FinalizingAnalysis,
+        "reviewReady" => DuplicateRunPhase::ReviewReady,
+        _ => DuplicateRunPhase::Idle,
     }
 }

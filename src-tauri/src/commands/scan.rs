@@ -1,15 +1,37 @@
 use safepath_core::{
-    analyzer, scanner, AnalysisProgressEvent, AnalysisStage, AnalysisSummaryDto, HistoryPageDto,
+    analyzer, scanner, AnalysisProgressEvent, AnalysisStage, AnalysisSummaryDto,
+    DuplicateRunPhase, DuplicateRunProgressEvent, FileContentHashCache, HistoryPageDto,
+    ImageDHashCache,
     ManifestPageDto, PermissionReadinessState, ProtectionOverrideDto, ProtectionOverrideKind,
     ScanJobState, ScanJobStatusDto, ScanPageReadyEvent, ScanProgressEvent, ScanStartedEvent,
     StartScanRequest, WorkflowPhase,
 };
+use safepath_store::Store;
 use std::thread;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::AppState;
 
 const DEFAULT_PAGE_SIZE: u32 = 100;
+
+fn publish_duplicate_run_phase(
+    app: &AppHandle,
+    store: &Store,
+    job_id: &str,
+    phase: DuplicateRunPhase,
+) {
+    if let Err(err) = store.set_duplicate_run_phase(job_id, phase) {
+        eprintln!("publish_duplicate_run_phase: {err}");
+        return;
+    }
+    let _ = app.emit(
+        "duplicate_run_progress",
+        DuplicateRunProgressEvent {
+            job_id: job_id.to_string(),
+            phase,
+        },
+    );
+}
 
 #[tauri::command]
 pub fn start_scan(
@@ -23,6 +45,15 @@ pub fn start_scan(
     if selection.source_paths.is_empty() {
         return Err("At least one source path is required.".to_string());
     }
+
+    if let Some(config) = request.duplicate_config.clone() {
+        state.persist_duplicate_config(config)?;
+    }
+
+    let duplicate_config = request
+        .duplicate_config
+        .or_else(|| state.selection_snapshot().ok().and_then(|s| s.duplicate_config))
+        .unwrap_or_default();
 
     let readiness = crate::permissions::permissions_readiness(
         &selection.source_paths,
@@ -39,7 +70,11 @@ pub fn start_scan(
 
     let job = state
         .store
-        .create_scan_job(&selection.source_paths, DEFAULT_PAGE_SIZE)?;
+        .create_scan_job(
+            &selection.source_paths,
+            DEFAULT_PAGE_SIZE,
+            Some(&duplicate_config),
+        )?;
     state
         .store
         .set_scan_state(&job.job_id, ScanJobState::Running, None)?;
@@ -65,6 +100,12 @@ pub fn start_scan(
     let source_paths = status.source_paths.clone();
 
     thread::spawn(move || {
+        publish_duplicate_run_phase(
+            &worker_app,
+            &worker_state.store,
+            &job_id,
+            DuplicateRunPhase::Discovering,
+        );
         let result = scanner::scan_sources(
             &source_paths,
             |entry| {
@@ -104,9 +145,23 @@ pub fn start_scan(
         match result {
             Ok(()) => {
                 let (final_state, final_error) = if worker_state.is_cancelled(&job_id) {
+                    publish_duplicate_run_phase(
+                        &worker_app,
+                        &worker_state.store,
+                        &job_id,
+                        DuplicateRunPhase::Idle,
+                    );
                     (ScanJobState::Cancelled, None)
                 } else {
-                    let _ = worker_state.set_workflow_phase(WorkflowPhase::Analyzing);
+                    publish_duplicate_run_phase(
+                        &worker_app,
+                        &worker_state.store,
+                        &job_id,
+                        DuplicateRunPhase::AnalyzingDuplicates,
+                    );
+                    if let Err(error) = worker_state.set_workflow_phase(WorkflowPhase::Analyzing) {
+                        eprintln!("scan worker: set_workflow_phase(Analyzing) failed: {error}");
+                    }
                     let _ = worker_app.emit(
                         "analysis_progress",
                         AnalysisProgressEvent {
@@ -118,14 +173,35 @@ pub fn start_scan(
                     let analysis_result = (|| -> Result<(), String> {
                         let entries = worker_state.store.get_manifest_entries(&job_id)?;
                         let protection_overrides = worker_state.store.get_protection_overrides()?;
-                        let summary =
-                            analyzer::analyze_manifest(&job_id, &entries, &protection_overrides);
+                        let dup_cfg = worker_state
+                            .store
+                            .get_scan_status(&job_id)?
+                            .and_then(|job| job.duplicate_config)
+                            .unwrap_or_default();
+                        let summary = analyzer::analyze_manifest(
+                            &job_id,
+                            &entries,
+                            &protection_overrides,
+                            &dup_cfg,
+                        );
                         worker_state.store.save_analysis_summary(&summary)?;
                         Ok(())
                     })();
 
                     match analysis_result {
                         Ok(()) => {
+                            publish_duplicate_run_phase(
+                                &worker_app,
+                                &worker_state.store,
+                                &job_id,
+                                DuplicateRunPhase::FinalizingAnalysis,
+                            );
+                            publish_duplicate_run_phase(
+                                &worker_app,
+                                &worker_state.store,
+                                &job_id,
+                                DuplicateRunPhase::ReviewReady,
+                            );
                             let _ = worker_app.emit(
                                 "analysis_progress",
                                 AnalysisProgressEvent {
@@ -136,6 +212,12 @@ pub fn start_scan(
                             (ScanJobState::Completed, None)
                         }
                         Err(error) => {
+                            publish_duplicate_run_phase(
+                                &worker_app,
+                                &worker_state.store,
+                                &job_id,
+                                DuplicateRunPhase::Idle,
+                            );
                             let _ = worker_app.emit(
                                 "job_failed",
                                 serde_json::json!({
@@ -147,20 +229,57 @@ pub fn start_scan(
                         }
                     }
                 };
-                let _ =
-                    worker_state
+                if matches!(
+                    final_state,
+                    ScanJobState::Failed | ScanJobState::Cancelled
+                ) {
+                    if let Err(err) = worker_state
                         .store
-                        .set_scan_state(&job_id, final_state, final_error.as_deref());
-                let _ = worker_state.clear_cancel(&job_id);
-                let _ = worker_state.set_workflow_phase(WorkflowPhase::Idle);
+                        .clear_expensive_analysis_caches_for_job(&job_id)
+                    {
+                        eprintln!(
+                            "scan worker: clear_expensive_analysis_caches_for_job failed: {err}"
+                        );
+                    }
+                }
+                if let Err(error) = worker_state
+                    .store
+                    .set_scan_state(&job_id, final_state, final_error.as_deref())
+                {
+                    eprintln!("scan worker: set_scan_state failed: {error}");
+                }
+                if let Err(error) = worker_state.clear_cancel(&job_id) {
+                    eprintln!("scan worker: clear_cancel failed: {error}");
+                }
+                if let Err(error) = worker_state.set_workflow_phase(WorkflowPhase::Idle) {
+                    eprintln!("scan worker: set_workflow_phase(Idle) failed: {error}");
+                }
             }
             Err(error) => {
-                let _ =
-                    worker_state
-                        .store
-                        .set_scan_state(&job_id, ScanJobState::Failed, Some(&error));
-                let _ = worker_state.clear_cancel(&job_id);
-                let _ = worker_state.set_workflow_phase(WorkflowPhase::Idle);
+                publish_duplicate_run_phase(
+                    &worker_app,
+                    &worker_state.store,
+                    &job_id,
+                    DuplicateRunPhase::Idle,
+                );
+                if let Err(set_error) = worker_state
+                    .store
+                    .set_scan_state(&job_id, ScanJobState::Failed, Some(&error))
+                {
+                    eprintln!("scan worker: set_scan_state(Failed) failed: {set_error}");
+                }
+                if let Err(err) = worker_state
+                    .store
+                    .clear_expensive_analysis_caches_for_job(&job_id)
+                {
+                    eprintln!("scan worker: clear_expensive_analysis_caches_for_job failed: {err}");
+                }
+                if let Err(clear_error) = worker_state.clear_cancel(&job_id) {
+                    eprintln!("scan worker: clear_cancel failed: {clear_error}");
+                }
+                if let Err(phase_error) = worker_state.set_workflow_phase(WorkflowPhase::Idle) {
+                    eprintln!("scan worker: set_workflow_phase(Idle) failed: {phase_error}");
+                }
                 let _ = worker_app.emit(
                     "job_failed",
                     serde_json::json!({
@@ -181,6 +300,10 @@ pub fn cancel_scan(state: State<'_, AppState>, job_id: String) -> Result<ScanJob
     state
         .store
         .set_scan_state(&job_id, ScanJobState::Cancelled, None)?;
+    let _ = state
+        .store
+        .set_duplicate_run_phase(&job_id, DuplicateRunPhase::Idle);
+    let _ = state.store.clear_expensive_analysis_caches_for_job(&job_id);
     state.set_workflow_phase(WorkflowPhase::Idle)?;
     state
         .store
@@ -194,6 +317,23 @@ pub fn get_scan_status(
     job_id: String,
 ) -> Result<Option<ScanJobStatusDto>, String> {
     state.store.get_scan_status(&job_id)
+}
+
+/// Duplicate workflow alias: `run_id` is the same as `job_id` for this build.
+#[tauri::command]
+pub fn get_duplicate_run_status(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> Result<Option<ScanJobStatusDto>, String> {
+    state.store.get_scan_status(&run_id)
+}
+
+#[tauri::command]
+pub fn cancel_duplicate_run(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> Result<ScanJobStatusDto, String> {
+    cancel_scan(state, run_id)
 }
 
 #[tauri::command]
@@ -255,19 +395,54 @@ pub fn run_expensive_analysis(
     let worker_app = app.clone();
     let worker_state = state.inner().clone();
     thread::spawn(move || {
+        publish_duplicate_run_phase(
+            &worker_app,
+            &worker_state.store,
+            &job_id,
+            DuplicateRunPhase::HashingDuplicateContent,
+        );
         let result = (|| -> Result<AnalysisSummaryDto, String> {
             let entries = worker_state.store.get_manifest_entries(&job_id)?;
             let protection_overrides = worker_state.store.get_protection_overrides()?;
-            let summary =
-                analyzer::run_expensive_analysis(&job_id, &entries, &protection_overrides)?;
+            let dup_cfg = worker_state
+                .store
+                .get_scan_status(&job_id)?
+                .and_then(|job| job.duplicate_config)
+                .unwrap_or_default();
+            let mut on_duplicate_phase = |phase: DuplicateRunPhase| {
+                publish_duplicate_run_phase(&worker_app, &worker_state.store, &job_id, phase);
+            };
+            let summary = analyzer::run_expensive_analysis(
+                &job_id,
+                &entries,
+                &protection_overrides,
+                &dup_cfg,
+                Some(&worker_state.store as &dyn FileContentHashCache),
+                Some(&worker_state.store as &dyn ImageDHashCache),
+                Some(&mut on_duplicate_phase),
+            )?;
             worker_state.store.save_analysis_summary(&summary)?;
             Ok(summary)
         })();
 
-        let _ = worker_state.set_workflow_phase(WorkflowPhase::Idle);
+        if let Err(error) = worker_state.set_workflow_phase(WorkflowPhase::Idle) {
+            eprintln!("run_expensive_analysis worker: set_workflow_phase(Idle) failed: {error}");
+        }
 
         match result {
             Ok(_) => {
+                publish_duplicate_run_phase(
+                    &worker_app,
+                    &worker_state.store,
+                    &job_id,
+                    DuplicateRunPhase::FinalizingAnalysis,
+                );
+                publish_duplicate_run_phase(
+                    &worker_app,
+                    &worker_state.store,
+                    &job_id,
+                    DuplicateRunPhase::ReviewReady,
+                );
                 let _ = worker_app.emit(
                     "analysis_progress",
                     AnalysisProgressEvent {
@@ -277,6 +452,12 @@ pub fn run_expensive_analysis(
                 );
             }
             Err(error) => {
+                publish_duplicate_run_phase(
+                    &worker_app,
+                    &worker_state.store,
+                    &job_id,
+                    DuplicateRunPhase::Idle,
+                );
                 let _ = worker_app.emit(
                     "job_failed",
                     serde_json::json!({

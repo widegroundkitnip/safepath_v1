@@ -86,6 +86,8 @@ impl Store {
                 .map_err(|error| error.to_string())?;
         }
 
+        self.prune_orphaned_expensive_analysis_caches(&summary.job_id)?;
+
         Ok(())
     }
 
